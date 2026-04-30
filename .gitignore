@@ -30,6 +30,13 @@ phpstan-bootstrap.php
 release.md
 report.md
 
+# wp.org assets + publishing guide (local only — never shipped, never tracked)
+# Excluded from the wp.org ZIP via .distignore and from git via this rule.
+# Screenshots are regenerated locally with scripts/capture-wporg-screenshots.mjs
+# and consumed by scripts/svn-release.sh from the working tree. PUBLISHING-GUIDE.md
+# is the local SVN deploy runbook (kept off the public history).
+.wordpress-org/
+
 # Playwright
 .playwright-mcp/
 tests/e2e/reports/
