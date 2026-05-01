@@ -1,5 +1,6 @@
 === FAZ Cookie Manager ===
 Contributors: fabiodalez
+Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 6.9
