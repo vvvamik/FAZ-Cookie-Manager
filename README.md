@@ -3,7 +3,6 @@
 **The only cookie consent plugin you need. 100% free, no required cloud account, no subscriptions.**
 
 [![WordPress.org](https://img.shields.io/wordpress/plugin/v/faz-cookie-manager?label=wordpress.org&color=0073aa)](https://wordpress.org/plugins/faz-cookie-manager/)
-[![Active Installs](https://img.shields.io/wordpress/plugin/installs/faz-cookie-manager?color=0073aa)](https://wordpress.org/plugins/faz-cookie-manager/)
 [![Rating](https://img.shields.io/wordpress/plugin/rating/faz-cookie-manager?color=0073aa)](https://wordpress.org/plugins/faz-cookie-manager/reviews/)
 [![Tested up to](https://img.shields.io/wordpress/plugin/tested/faz-cookie-manager?color=0073aa)](https://wordpress.org/plugins/faz-cookie-manager/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
