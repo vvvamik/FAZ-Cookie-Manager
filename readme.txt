@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 6.9
-Stable tag: 1.13.12
+Stable tag: 1.13.13
 Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -207,6 +207,16 @@ By default, no — your consent logs, banner configuration and categories stay i
 10. **Settings** -- Global controls: enable/disable the banner, exclude specific pages, cross-domain consent forwarding, hide from bots, GTM dataLayer events, consent log retention and scanner limits.
 
 == Changelog ==
+
+= 1.13.13 =
+* Fix: Fatal error on fresh install — `wp_salt()` called without `\` prefix inside the `FazCookie\Admin\Modules\Consentlogs\Includes` namespace caused PHP to look for a non-existent namespaced function instead of the global WordPress `wp_salt()`. Crashed Playground, staging, and any first-time activation where `maybe_create_table()` runs the user-agent migration query. Three callsites fixed.
+* Added: WordPress Playground Live Preview on the plugin directory page — try the plugin in your browser without installing it.
+
+= 1.13.12 =
+* Security: `consent_revision` cannot be lowered via DevTools manipulation; `target_domains` validates http/https scheme; `necessary`/`uncategorized` categories protected from deletion; pageview tracking endpoint gated on setting; WP-CLI export hardened against path traversal.
+* Fix: `purge_page_caches()` isolated per plugin in try/catch; `faz_version` bumped last in `install()` so failed migrations retry. Excluded-pages patterns strip query string before matching. `faz_path_matches_pattern()` replaces bare `fnmatch()`.
+* Fix: WCA.js `performance` maps to `statistics`; `advertisement` back-compat alias. Croatian locale `hr` → `hr_HR`. `alwaysActive` toggle now has distinct blue colour.
+* Added: "Share consent across subdomains" toggle. GitHub Actions Plugin Check workflow.
 
 = 1.13.11 =
 * Removed: arbitrary CSS insertion via the Banner → Custom CSS field. The textarea is gone from the admin UI, the API preview no longer renders it, and the public frontend no longer injects it. Existing values stay in the database for downgrade safety but are inert in both contexts. To customise the consent banner appearance, use **Customizer → Additional CSS** (a built-in WordPress feature) and target `.faz-consent-container`, `.faz-modal`, etc. — wp.org compliance ("plugins must not allow arbitrary code insertion").

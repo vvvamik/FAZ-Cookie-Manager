@@ -494,6 +494,10 @@ Value format: `consentid:{base64},consent:yes,action:yes,necessary:yes,functiona
 
 ## Changelog
 
+### 1.13.13
+- **Fix**: Fatal error on fresh install — `wp_salt()` called without `\` prefix inside `ConsentLogs` namespace crashed Playground, staging, and any first-time activation where the migration query runs.
+- **Added**: WordPress Playground Live Preview on wp.org plugin page.
+
 ### 1.13.12
 - **Security**: `consent_revision` cannot be lowered via DevTools manipulation; `target_domains` validates http/https scheme + non-empty host; `necessary`/`uncategorized` categories protected from REST deletion; pageview tracking endpoint only registered when tracking is on; WP-CLI export hardened against null bytes, `..` traversal, and symlink escape.
 - **Fix**: `purge_page_caches()` now isolates each cache plugin in try/catch — a failing backend can no longer abort the upgrade and leave `faz_version` un-bumped. `faz_version` is now bumped LAST in `install()` so failed migrations retry on the next admin request. Excluded-pages patterns now strip query string and fragment before matching. `faz_path_matches_pattern()` replaces bare `fnmatch()` for portability and case-insensitivity.

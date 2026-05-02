@@ -2,6 +2,16 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.13.13] — 2026-05-02
+
+### Fixed
+
+- **Fatal error on fresh install in namespaced context.** `wp_salt()` was called without a leading `\` in `ConsentLogs\Includes\Controller`, causing PHP to resolve it as `FazCookie\Admin\Modules\Consentlogs\Includes\wp_salt()` — a function that does not exist. This crashed any fresh install (Playground, staging, first-time activations) at the point where `maybe_create_table()` runs the user-agent migration query. Three callsites fixed: migration `$wpdb->prepare()` call, `hash_ip()`, and `hash_user_agent()`.
+
+### Added
+
+- **WordPress Playground Live Preview** on the wp.org plugin page. Try the plugin in your browser without installing it, via the Preview button next to Download on wordpress.org/plugins/faz-cookie-manager.
+
 ## [1.13.12] — 2026-04-30
 
 ### Security / hardening
