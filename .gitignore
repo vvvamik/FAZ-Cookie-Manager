@@ -35,7 +35,9 @@ report.md
 # Screenshots are regenerated locally with scripts/capture-wporg-screenshots.mjs
 # and consumed by scripts/svn-release.sh from the working tree. PUBLISHING-GUIDE.md
 # is the local SVN deploy runbook (kept off the public history).
-.wordpress-org/
+# blueprint.json is tracked (wp.org Playground Live Preview — SVN assets/).
+.wordpress-org/*
+!.wordpress-org/blueprint.json
 
 # Playwright
 .playwright-mcp/

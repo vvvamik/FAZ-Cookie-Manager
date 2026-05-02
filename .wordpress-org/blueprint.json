@@ -1,0 +1,32 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "preferredVersions": {
+    "php": "8.2",
+    "wp": "latest"
+  },
+  "features": {
+    "networking": false
+  },
+  "landingPage": "/",
+  "steps": [
+    {
+      "step": "login",
+      "username": "admin",
+      "password": "password"
+    },
+    {
+      "step": "installPlugin",
+      "pluginZipFile": {
+        "resource": "wordpress.org/plugins",
+        "slug": "faz-cookie-manager"
+      },
+      "options": {
+        "activate": true
+      }
+    },
+    {
+      "step": "goTo",
+      "url": "/"
+    }
+  ]
+}
