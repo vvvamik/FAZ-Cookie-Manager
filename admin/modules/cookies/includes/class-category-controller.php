@@ -222,6 +222,8 @@ class Category_Controller extends Base_Controller {
 	 */
 	public function update_item( $object ) {
 		global $wpdb;
+		$date_modified = current_time( 'mysql' );
+		$object->set_date_modified( $date_modified );
 		$wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prefix . 'faz_cookie_categories',
 			array(
@@ -233,7 +235,7 @@ class Category_Controller extends Base_Controller {
 				'priority'           => $object->get_priority(),
 				'sell_personal_data' => ( true === $object->get_sell_personal_data() ? 1 : 0 ),
 				'meta'               => wp_json_encode( $object->get_meta() ),
-				'date_modified'      => $object->get_date_modified(),
+				'date_modified'      => $date_modified,
 			),
 			array( 'category_id' => $object->get_id() ),
 			array(

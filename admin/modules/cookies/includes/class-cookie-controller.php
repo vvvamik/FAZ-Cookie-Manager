@@ -274,6 +274,8 @@ class Cookie_Controller extends Base_Controller {
 	 */
 	public function update_item( $object ) {
 		global $wpdb;
+		$date_modified = current_time( 'mysql' );
+		$object->set_date_modified( $date_modified );
 		$wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prefix . 'faz_cookies',
 			array(
@@ -288,7 +290,7 @@ class Cookie_Controller extends Base_Controller {
 				'url_pattern'   => $object->get_url_pattern(),
 				'meta'          => wp_json_encode( $object->get_meta() ),
 				'date_created'  => $object->get_date_created(),
-				'date_modified' => $object->get_date_modified(),
+				'date_modified' => $date_modified,
 			),
 			array( 'cookie_id' => $object->get_id() ),
 			array(

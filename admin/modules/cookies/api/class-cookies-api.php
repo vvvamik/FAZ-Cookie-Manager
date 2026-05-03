@@ -268,7 +268,7 @@ class Cookies_API extends API_Controller {
 				continue;
 			}
 			$cookie = new Cookie( $id );
-			if ( ! $cookie->get_id() ) {
+			if ( ! $cookie->get_loaded() ) {
 				continue;
 			}
 			if ( isset( $item['category'] ) ) {
@@ -310,7 +310,7 @@ class Cookies_API extends API_Controller {
 				continue;
 			}
 			$cookie = new Cookie( $id );
-			if ( $cookie->get_id() ) {
+			if ( $cookie->get_loaded() ) {
 				$cookie->delete();
 				$deleted++;
 			}
