@@ -2712,7 +2712,7 @@ function _fazAddPlaceholder(htmlElm, uniqueID) {
     if (innerTextElement) innerTextElement.classList.add('faz-hidden');
     var youtubeID = _fazGetYoutubeID(htmlElm.src || '');
     if (!youtubeID) {
-        _fazSetPlaceHolder();
+        _fazSetPlaceHolder(addedNode);
         return;
     }
     addedNode.classList.replace(
@@ -2725,7 +2725,7 @@ function _fazAddPlaceholder(htmlElm, uniqueID) {
             "video-placeholder-text-youtube"
         );
     }
-    _fazSetPlaceHolder();
+    _fazSetPlaceHolder(addedNode);
 }
 function _fazGetYoutubeID(src) {
     const match = src.match(
@@ -2736,11 +2736,12 @@ function _fazGetYoutubeID(src) {
     return false;
 }
 
-function _fazSetPlaceHolder() {
+function _fazSetPlaceHolder(container) {
     const status = _fazStore._bannerConfig.config.videoPlaceholder.status;
     const styles = _fazStore._bannerConfig.config.videoPlaceholder.styles;
     if (!status) return;
-    const placeHolders = document.querySelectorAll(
+    const root = (container && typeof container.querySelectorAll === 'function') ? container : document;
+    const placeHolders = root.querySelectorAll(
         `[data-faz-tag="placeholder-title"]`
     );
     if (placeHolders.length < 1) return;
