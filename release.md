@@ -25,8 +25,8 @@ scripts/svn-release.sh --version=${VERSION} --no-tag
 
 Update version in **four places**:
 
-- `faz-cookie-manager.php` — lines `Version:`, `Stable tag:`, and `define( 'FAZ_VERSION', '...' )`
-- `readme.txt` — line `Stable tag:`
+- `faz-cookie-manager.php` — lines `Version:`, `Stable tag:`, `Tested up to:`, and `define( 'FAZ_VERSION', '...' )`
+- `readme.txt` — lines `Stable tag:` **and `Tested up to:`** (must match the value in `faz-cookie-manager.php` — Plugin Check fails if they differ or if value < current WP release)
 - `README.md` — **MANDATORY**: add new version entry to the Changelog section (this is NOT optional — every release MUST have a corresponding entry in README.md)
 - `CHANGELOG.md` — add new version section with full details
 
