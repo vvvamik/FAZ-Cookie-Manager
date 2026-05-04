@@ -494,6 +494,13 @@ Value format: `consentid:{base64},consent:yes,action:yes,necessary:yes,functiona
 
 ## Changelog
 
+### 1.13.15
+- **Fix**: TinyMCE editors restored for Notice/Preference Description in banner admin (`wp_editor()` was accidentally replaced with bare `<textarea>`).
+- **Fix**: REST DELETE category was a silent no-op when `get_loaded()` was false; REST PUT wiped unspecified fields; `Cookie_Controller::delete_item()` missing `$where_format`.
+- **Fix**: Dynamic video placeholder (`_fazAddPlaceholder`) did not call `_fazSetPlaceHolder()` for non-YouTube providers, leaving `faz-hidden` on the title; MutationObserver accumulated duplicate click listeners on existing placeholders.
+- **Fix**: `faz_get_cookie_domain()` returned a malformed IP suffix (`.0.1`) for sites accessed via IP address, causing `setcookie()` to silently fail. Now returns `''` (host-only cookie) per RFC 6265.
+- **Added**: 9 E2E regression tests covering all fixed areas.
+
 ### 1.13.14
 - **Fix**: Fatal error on WordPress Playground — `maybe_create_table()` called synchronously from the constructor during plugin loading, before `wp_salt()` is available in Playground's WASM bootstrap. Deferred to `plugins_loaded` hook + `function_exists` guard.
 

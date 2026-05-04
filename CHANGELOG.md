@@ -2,6 +2,23 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.13.15] — 2026-05-04
+
+### Fixed
+
+- **TinyMCE rich-text editors restored** for "Notice Description" and "Preference Description" fields in the banner admin page. A previous refactor replaced `wp_editor()` with plain `<textarea>` elements, breaking WYSIWYG editing for banner text content.
+- **REST DELETE category was a silent no-op.** `delete_item()` returned early because `get_loaded()` was false — the REST controller called `set_id()` but never `read()` the row before deleting. Now calls `get_data_from_db()` first; confirmed with a 404 GET assertion in the E2E suite.
+- **REST PUT category wiped unspecified fields.** `prepare_item_for_database()` started from a blank object, so a name-only PATCH would overwrite slug and description with empty values. Fixed by loading the existing row before applying request fields.
+- **Dynamic video placeholder text stayed hidden (non-YouTube providers).** `_fazAddPlaceholder()` called `_fazSetPlaceHolder()` only in the YouTube branch; Vimeo, Dailymotion and other providers returned early without removing `faz-hidden` from the placeholder title. Fix: call `_fazSetPlaceHolder(addedNode)` in both branches.
+- **Duplicate MutationObserver click listeners.** Each `_fazAddPlaceholder()` invocation ran `document.querySelectorAll(…)` globally, accumulating N listeners on placeholder #1 after N iframes were injected. Fixed by passing `addedNode` as `container` to scope the query to the newly added node.
+- **Cookie domain broken on IP-addressed sites.** `faz_get_cookie_domain()` attempted to compute a domain suffix for IP addresses (e.g. `127.0.0.1` → `.0.1`), causing `setcookie()` to silently discard the cookie. Per RFC 6265 §4.1.2.3, the `Domain` attribute must not be an IP address; fix detects IPs via `filter_var(FILTER_VALIDATE_IP)` and returns `''` (host-only cookie).
+- **`$wpdb->delete()` missing `$where_format`** in `Cookie_Controller::delete_item()`. Plugin Check flags this as an escaping issue; fixed by passing `array('%d')` as the third argument.
+- **`Tested up to` version corrected** from `6.9` (unreleased) to `6.8`.
+
+### Added
+
+- **9 E2E regression tests** in `tests/e2e/specs/pr92-tinymce-and-placeholder.spec.ts` covering all five areas: TinyMCE render, REST DELETE, video placeholder, IP cookie domain, and REST PUT partial update.
+
 ## [1.13.14] — 2026-05-02
 
 ### Fixed
