@@ -18,7 +18,7 @@
  * Description:       A comprehensive GDPR/CCPA cookie consent manager with built-in cookie scanner, local consent logging, Google Consent Mode v2, and IAB TCF v2.3 support.
  * Version:           1.13.14
  * Requires at least: 5.0
- * Tested up to:      6.9
+ * Tested up to:      6.8
  * Stable tag:        1.13.14
  * Requires PHP:      7.4
  * Author:            Fabio D'Alessandro
@@ -138,6 +138,13 @@ function faz_get_cookie_domain() {
 	$domain = '';
 	$parsed = wp_parse_url( home_url() );
 	$host   = isset( $parsed['host'] ) ? (string) $parsed['host'] : '';
+
+	// RFC 6265 §4.1.2.3 — the Domain attribute MUST NOT be an IP address.
+	// Browsers silently reject domain=<ip>, so skip the root-domain logic entirely.
+	if ( filter_var( $host, FILTER_VALIDATE_IP ) ) {
+		return apply_filters( 'faz_cookie_domain', '' );
+	}
+
 	$parts  = explode( '.', $host );
 	$count  = count( $parts );
 

@@ -190,7 +190,10 @@ class Categories_API extends API_Controller {
 				}
 
 				if ( $id ) {
-					$object        = new Cookie_Categories( $id );
+					$object = new Cookie_Categories( $id );
+					if ( ! $object->get_loaded() ) {
+						continue;
+					}
 					$prior_consent = isset( $_category['prior_consent'] ) ? (bool) $_category['prior_consent'] : false;
 					$visibility    = isset( $_category['visibility'] ) ? (bool) $_category['visibility'] : true;
 					$object->set_prior_consent( $prior_consent );

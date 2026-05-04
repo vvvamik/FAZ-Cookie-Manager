@@ -222,6 +222,8 @@ class Category_Controller extends Base_Controller {
 	 */
 	public function update_item( $object ) {
 		global $wpdb;
+		$date_modified = current_time( 'mysql' );
+		$object->set_date_modified( $date_modified );
 		$wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prefix . 'faz_cookie_categories',
 			array(
@@ -233,7 +235,7 @@ class Category_Controller extends Base_Controller {
 				'priority'           => $object->get_priority(),
 				'sell_personal_data' => ( true === $object->get_sell_personal_data() ? 1 : 0 ),
 				'meta'               => wp_json_encode( $object->get_meta() ),
-				'date_modified'      => $object->get_date_modified(),
+				'date_modified'      => $date_modified,
 			),
 			array( 'category_id' => $object->get_id() ),
 			array(
@@ -293,6 +295,23 @@ class Category_Controller extends Base_Controller {
 		if ( ! $category_id ) {
 			return;
 		}
+		// When called from the REST API, the object has only set_id() — get_loaded()
+		// is false because read() was never called. In that case fetch the slug
+		// directly so the protection check below still works correctly.
+		if ( method_exists( $object, 'get_loaded' ) && ! $object->get_loaded() ) {
+			$row = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->prepare(
+					"SELECT slug FROM {$wpdb->prefix}faz_cookie_categories WHERE category_id = %d",
+					$category_id
+				)
+			);
+			if ( ! $row ) {
+				return;
+			}
+			$slug = sanitize_text_field( $row->slug );
+		} else {
+			$slug = (string) $object->get_slug();
+		}
 
 		// Protect built-in non-removable categories. The `necessary` and
 		// `uncategorized` slugs are referenced by the consent flow and the
@@ -301,7 +320,6 @@ class Category_Controller extends Base_Controller {
 		// non-disableable invariant on the frontend banner. Refuse at
 		// the controller layer — REST callers receive a clear error
 		// instead of a 200 with stale state.
-		$slug = (string) $object->get_slug();
 		if ( in_array( $slug, array( 'necessary', 'uncategorized' ), true ) ) {
 			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- defensive no-op if no transaction is open.
 			throw new \RuntimeException(

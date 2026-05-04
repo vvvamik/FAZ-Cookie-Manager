@@ -146,7 +146,22 @@ defined( 'ABSPATH' ) || exit;
 				</div>
 				<div class="faz-form-group">
 					<label><?php esc_html_e( 'Notice Description', 'faz-cookie-manager' ); ?></label>
-					<textarea class="faz-textarea faz-richtext" id="faz-b-notice-desc" rows="7" placeholder="<?php esc_attr_e( 'Describe what the banner is asking consent for. HTML is supported if you need links or formatting.', 'faz-cookie-manager' ); ?>"></textarea>
+					<?php
+					wp_editor(
+						'',
+						'faz-b-notice-desc',
+						array(
+							'textarea_rows' => 6,
+							'media_buttons' => false,
+							'quicktags'     => true,
+							'teeny'         => false,
+							'tinymce'       => array(
+								'toolbar1' => 'bold,italic,underline,link,unlink,bullist,numlist,blockquote,hr,undo,redo',
+								'toolbar2' => '',
+							),
+						)
+					);
+					?>
 					<div class="faz-help"><?php esc_html_e( 'Supports plain text or HTML. The preview uses the frontend site styles for the final result.', 'faz-cookie-manager' ); ?></div>
 				</div>
 			</div>
@@ -454,7 +469,22 @@ defined( 'ABSPATH' ) || exit;
 				</div>
 				<div class="faz-form-group">
 					<label><?php esc_html_e( 'Description', 'faz-cookie-manager' ); ?></label>
-					<textarea class="faz-textarea faz-richtext" id="faz-b-pref-desc" rows="7" placeholder="<?php esc_attr_e( 'Explain what visitors can change in the preference center. HTML is supported if you need links or formatting.', 'faz-cookie-manager' ); ?>"></textarea>
+					<?php
+					wp_editor(
+						'',
+						'faz-b-pref-desc',
+						array(
+							'textarea_rows' => 6,
+							'media_buttons' => false,
+							'quicktags'     => true,
+							'teeny'         => false,
+							'tinymce'       => array(
+								'toolbar1' => 'bold,italic,underline,link,unlink,bullist,numlist,blockquote,hr,undo,redo',
+								'toolbar2' => '',
+							),
+						)
+					);
+					?>
 					<div class="faz-help"><?php esc_html_e( 'Supports plain text or HTML. Keep it short enough to stay readable on mobile.', 'faz-cookie-manager' ); ?></div>
 				</div>
 				<div class="faz-grid faz-grid-2">

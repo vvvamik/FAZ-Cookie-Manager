@@ -103,7 +103,7 @@ abstract class API_Controller extends Rest_Controller {
 	 */
 	public function get_item( $request ) {
 		$object = $this->get_item_object( (int) $request['id'] );
-		if ( ! $object || 0 === $object->get_id() ) {
+		if ( ! $object || 0 === $object->get_id() || ! $object->get_loaded() ) {
 			return new WP_Error( 'fazcookie_rest_invalid_id', __( 'Invalid ID.', 'faz-cookie-manager' ), array( 'status' => 404 ) );
 		}
 		$data = $this->prepare_item_for_response( $object, $request );
@@ -125,7 +125,10 @@ abstract class API_Controller extends Rest_Controller {
 			);
 		}
 		$object = $this->may_be_create( $request, true );
-		$data   = $this->prepare_item_for_response( $object, $request );
+		if ( is_wp_error( $object ) ) {
+			return $object;
+		}
+		$data = $this->prepare_item_for_response( $object, $request );
 		return rest_ensure_response( $data );
 	}
 
@@ -137,7 +140,10 @@ abstract class API_Controller extends Rest_Controller {
 	 */
 	public function update_item( $request ) {
 		$object = $this->may_be_create( $request, false );
-		$data   = $this->prepare_item_for_response( $object, $request );
+		if ( is_wp_error( $object ) ) {
+			return $object;
+		}
+		$data = $this->prepare_item_for_response( $object, $request );
 		return rest_ensure_response( $data );
 	}
 
@@ -154,8 +160,21 @@ abstract class API_Controller extends Rest_Controller {
 		if ( ! $object || 0 === $object->get_id() ) {
 			return new WP_Error( 'fazcookie_rest_invalid_id', __( 'Invalid ID.', 'faz-cookie-manager' ), array( 'status' => 404 ) );
 		}
+		// Load the full object so getters have data for the pre-delete snapshot.
+		$object->get_data_from_db();
+		if ( ! $object->get_loaded() ) {
+			return new WP_Error( 'fazcookie_rest_invalid_id', __( 'Invalid ID.', 'faz-cookie-manager' ), array( 'status' => 404 ) );
+		}
 		$data = $this->prepare_item_for_response( $object, $request );
-		$object->delete();
+		try {
+			$object->delete();
+		} catch ( \RuntimeException $e ) {
+			return new WP_Error(
+				'fazcookie_rest_delete_forbidden',
+				$e->getMessage(),
+				array( 'status' => 403 )
+			);
+		}
 		return rest_ensure_response( $data );
 	}
 	/**
@@ -203,6 +222,9 @@ abstract class API_Controller extends Rest_Controller {
 		// For updates, load existing data so unspecified fields are preserved.
 		if ( false === $create && $id > 0 ) {
 			$object->get_data_from_db();
+			if ( ! $object->get_loaded() ) {
+				return new WP_Error( 'fazcookie_rest_invalid_id', __( 'Invalid ID.', 'faz-cookie-manager' ), array( 'status' => 404 ) );
+			}
 		}
 
 		$schema     = $this->get_item_schema();
