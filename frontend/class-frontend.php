@@ -2198,12 +2198,14 @@ class Frontend {
 			$url = $this->extract_tag_attr( $attrs, 'href' );
 		}
 
-		$normalized_content = (string) $content;
+		$normalized_content  = (string) $content;
+		$is_data_uri_payload = false;
 		if ( '' !== $url && 0 === stripos( $url, 'data:' ) ) {
 			$decoded_payload = $this->decode_data_uri_payload( $url );
 			if ( '' !== $decoded_payload ) {
-				$url                = '';
-				$normalized_content = trim( $decoded_payload . ' ' . $normalized_content );
+				$url                 = '';
+				$normalized_content  = trim( $decoded_payload . ' ' . $normalized_content );
+				$is_data_uri_payload = true;
 			} else {
 				// Decode failed — clear the raw data URI so the encoded blob
 				// is not matched against provider patterns in the haystack.
@@ -2212,9 +2214,10 @@ class Frontend {
 		}
 
 		return array(
-			'url'      => $url,
-			'content'  => $normalized_content,
-			'haystack' => trim( $url . ' ' . $normalized_content ),
+			'url'                 => $url,
+			'content'             => $normalized_content,
+			'haystack'            => trim( $url . ' ' . $normalized_content ),
+			'is_data_uri_payload' => $is_data_uri_payload,
 		);
 	}
 
@@ -2375,8 +2378,9 @@ class Frontend {
 	 */
 	private function match_script_to_provider( $attrs, $content, $providers ) {
 		$match_context = $this->get_provider_match_context( $attrs, $content );
-		$url           = $match_context['url'];
-		$inline        = $match_context['content'];
+		$url                 = $match_context['url'];
+		$inline              = $match_context['content'];
+		$is_data_uri_payload = ! empty( $match_context['is_data_uri_payload'] );
 
 		foreach ( $providers as $pattern => $category ) {
 			if ( empty( $pattern ) ) {
@@ -2388,12 +2392,13 @@ class Frontend {
 			// reference a tracker domain in their data (e.g. Rank Math's rankMath.links
 			// object contains youtu.be, facebook.com, etc.) would be incorrectly blocked.
 			$is_url_pattern = false !== strpos( $pattern, '.' ) || false !== strpos( $pattern, '/' );
-			if ( $is_url_pattern ) {
-				if ( '' !== $url && false !== stripos( $url, $pattern ) ) {
-					return $category;
-				}
-			} else {
+			if ( '' !== $url && false !== stripos( $url, $pattern ) ) {
+				return $category;
+			}
+			if ( ! $is_url_pattern || $is_data_uri_payload ) {
 				// Code-signature patterns (fbq(, gtag, _ga …) match inline content.
+				// URL-fragment patterns may also match decoded data: script payloads
+				// because that payload is the executable source, not page data.
 				if ( false !== stripos( $inline, $pattern ) ) {
 					return $category;
 				}
@@ -3391,12 +3396,14 @@ class Frontend {
 			return $tag;
 		}
 
+		$tag_src = '' !== (string) $src ? (string) $src : $this->extract_tag_attr( $tag, 'src' );
 		foreach ( $providers as $pattern => $category ) {
 			if ( empty( $pattern ) ) {
 				continue;
 			}
-			// Match against handle, src, and full tag.
-			if ( false !== stripos( $handle, $pattern ) || false !== stripos( $src, $pattern ) || false !== stripos( $tag, $pattern ) ) {
+			// Match against the handle and script src only. Matching the full tag
+			// can false-positive on inline data snippets or unrelated attributes.
+			if ( false !== stripos( $handle, $pattern ) || false !== stripos( $tag_src, $pattern ) ) {
 				$blocked = $this->get_blocked_categories();
 				$should_block = in_array( $category, $blocked, true );
 

@@ -118,9 +118,9 @@ defined( 'ABSPATH' ) || exit;
 				<div class="faz-help"><?php echo wp_kses_post( __( 'URL patterns where script blocking is disabled (banner still shows). One per line, supports wildcards (e.g. <code>/checkout/*</code>).', 'faz-cookie-manager' ) ); ?></div>
 			</div>
 			<div class="faz-form-group">
-				<label><?php esc_html_e( 'Whitelisted URL Patterns', 'faz-cookie-manager' ); ?></label>
-				<textarea class="faz-textarea" data-path="script_blocking.whitelist_patterns" rows="3" placeholder="<?php esc_attr_e( 'One per line: googleapis.com/youtube/v3 or recaptcha', 'faz-cookie-manager' ); ?>"></textarea>
-				<div class="faz-help"><?php echo wp_kses_post( __( 'URL patterns that should never be blocked, even before consent. One per line. Use this for data-only APIs, reCAPTCHA, or other services that do not set tracking cookies. These patterns apply to both script tags and network requests (fetch/XHR). <strong>Be specific</strong> — avoid broad patterns like <code>google.com</code> which would also whitelist tracking scripts. Use paths like <code>googleapis.com/youtube/v3/</code> instead.', 'faz-cookie-manager' ) ); ?></div>
+				<label><?php esc_html_e( 'Script Blocking Exceptions', 'faz-cookie-manager' ); ?></label>
+				<textarea class="faz-textarea" data-path="script_blocking.whitelist_patterns" rows="3" placeholder="<?php esc_attr_e( 'One per line: googleapis.com/youtube/v3, recaptcha, my-inline-script-id', 'faz-cookie-manager' ); ?>"></textarea>
+				<div class="faz-help"><?php echo wp_kses_post( __( 'Scripts that should never be blocked, even before consent. One per line. Accepts three types of pattern:<br>- <strong>URL fragment</strong> (contains <code>.</code> or <code>/</code>): matched against the script\'s <code>src</code> or related URL attribute, e.g. <code>googleapis.com/youtube/v3</code>.<br>- <strong>Script ID</strong> (no dots/slashes): matched against the <code>id</code> attribute of the script tag, e.g. <code>my-product-form-data</code>.<br>- <strong>CSS class</strong> (no dots/slashes): matched against the script\'s <code>class</code> attribute, e.g. <code>recaptcha</code>.<br>These exceptions bypass blocking entirely. Use them only for scripts that genuinely do not set tracking cookies. <strong>Be specific</strong> to avoid accidentally unblocking trackers.', 'faz-cookie-manager' ) ); ?></div>
 			</div>
 		</div>
 	</div>
