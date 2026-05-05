@@ -209,10 +209,9 @@ By default, no — your consent logs, banner configuration and categories stay i
 == Changelog ==
 
 = 1.13.16 =
-* Fix: Inline scripts referencing tracker domains in config data (e.g. Rank Math) incorrectly triggered script blocking — URL-fragment patterns now matched only against the `src` attribute, not inline content.
-* Fix: `faz-skip` CSS class bypass used substring match, so `faz-skipper` would also bypass blocking. Fixed with whitespace-delimited token matching.
-* Fix: Unpreflixed global variables in `uninstall.php` renamed to `$faz_*` (Plugin Check compliance).
-* CI: Plugin Check workflow supports manual runs; root-level PNG/JPG excluded from ZIP via wildcard patterns.
+* Fix: Plugins like Rank Math include tracker domain names inside their inline JavaScript config. FAZ was mistakenly reading that config JSON and blocking the script. Tracker-domain patterns now match only against a script's `src` URL, not its inline content — so Rank Math and similar plugins are no longer false-positively blocked.
+* Fix: The `faz-skip` CSS class (which exempts a specific script from blocking) was matched as a plain substring, meaning any class starting with `faz-skip` (e.g. `faz-skipper`) would also grant exemption. Fixed to use exact whitespace-delimited token matching.
+* Fix: Global variables in `uninstall.php` were missing the `faz_` prefix required by WordPress Plugin Check. Renamed to `$faz_force_remove_all`, `$faz_offset`, `$faz_batch`, `$faz_site_ids`.
 
 = 1.13.15 =
 * Fix: TinyMCE editors restored for Notice/Preference Description in banner admin.
