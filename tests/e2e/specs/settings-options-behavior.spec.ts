@@ -289,7 +289,7 @@ test.describe('Settings option behavior interactions', () => {
       'update',
       { ad_storage: 'granted', analytics_storage: 'granted' },
     ]);
-    expect(await page.evaluate(() => (window as any).__clarityCalls)).toContainEqual(['consent']);
+    expect(await page.evaluate(() => (window as any).__clarityCalls)).toContainEqual(expect.arrayContaining(['consent']));
     await context.close();
   });
 

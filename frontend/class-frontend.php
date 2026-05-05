@@ -2172,15 +2172,22 @@ class Frontend {
 			return null;
 		}
 
-		$pattern_map   = $this->get_pattern_service_map();
-		$match_context = $this->get_provider_match_context( $attrs, $content );
-		$haystack      = $match_context['haystack'];
+		$pattern_map         = $this->get_pattern_service_map();
+		$match_context       = $this->get_provider_match_context( $attrs, $content );
+		$url                 = $match_context['url'];
+		$inline              = $match_context['content'];
+		$is_data_uri_payload = ! empty( $match_context['is_data_uri_payload'] );
 
 		foreach ( $pattern_map as $pattern => $service_id ) {
 			if ( empty( $pattern ) ) {
 				continue;
 			}
-			if ( false !== stripos( $haystack, $pattern ) ) {
+			$is_url_pattern = false !== strpos( $pattern, '.' ) || false !== strpos( $pattern, '/' );
+			$matched        = ( '' !== $url && false !== stripos( $url, $pattern ) );
+			if ( ! $matched && ( ! $is_url_pattern || $is_data_uri_payload ) ) {
+				$matched = false !== stripos( $inline, $pattern );
+			}
+			if ( $matched ) {
 				if ( isset( $service_consent[ $service_id ] ) ) {
 					return 'yes' !== $service_consent[ $service_id ];
 				}

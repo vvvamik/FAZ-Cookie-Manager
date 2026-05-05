@@ -159,18 +159,19 @@ async function readUiValue(setting: SettingCase): Promise<unknown> {
   }
 
   const locator = adminPage.locator(`[data-path="${setting.path}"]`);
-  const tagName = await locator.first().evaluate((node) => node.tagName.toLowerCase());
+  const first = locator.first();
+  const tagName = await first.evaluate((node) => node.tagName.toLowerCase());
   if (tagName === 'input') {
-    const type = await locator.first().getAttribute('type');
+    const type = await first.getAttribute('type');
     if (type === 'checkbox') {
-      return locator.first().isChecked();
+      return first.isChecked();
     }
-    return locator.first().inputValue();
+    return first.inputValue();
   }
   if (tagName === 'textarea' || tagName === 'select') {
-    return locator.first().inputValue();
+    return first.inputValue();
   }
-  return locator.first().textContent();
+  return first.textContent();
 }
 
 function expectedUiValue(value: unknown, setting: SettingCase): unknown {
