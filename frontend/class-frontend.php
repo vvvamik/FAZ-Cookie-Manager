@@ -1664,9 +1664,13 @@ class Frontend {
 	 */
 	private function is_whitelisted( $attrs, $content ) {
 		// Built-in escape hatch: class="faz-skip" bypasses blocking without any settings entry.
+		// Token match (not substring) so "faz-skipper" or "my-faz-skip-btn" do not bypass.
 		$class_attr = $this->extract_tag_attr( $attrs, 'class' );
-		if ( '' !== $class_attr && false !== stripos( $class_attr, 'faz-skip' ) ) {
-			return true;
+		if ( '' !== $class_attr ) {
+			$class_tokens = preg_split( '/\s+/', strtolower( $class_attr ), -1, PREG_SPLIT_NO_EMPTY );
+			if ( is_array( $class_tokens ) && in_array( 'faz-skip', $class_tokens, true ) ) {
+				return true;
+			}
 		}
 
 		$whitelist = $this->get_whitelist();
