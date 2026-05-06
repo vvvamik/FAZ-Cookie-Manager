@@ -239,15 +239,14 @@ class Frontend {
 			// inert. Use Customizer → Additional CSS (built-in WordPress)
 			// and target `.faz-consent-container`, `.faz-modal`, etc.
 
-			// Ad-blocker compatibility: use generic handle/var names to avoid filter lists.
-			$faz_settings = $this->get_faz_settings();
-			$alt_asset = ! empty( $faz_settings['banner_control']['alternative_asset_path'] );
+			// Ad-blocker compatibility: serve script inline to avoid URL pattern matching.
+			// The plugin directory name contains "cookie" which triggers filter lists.
+			// The config variable always stays _fazConfig — ad blockers match URLs, not variable names.
+			$faz_settings  = $this->get_faz_settings();
+			$alt_asset     = ! empty( $faz_settings['banner_control']['alternative_asset_path'] );
 			$script_handle = $alt_asset ? 'faz-fw' : $this->plugin_name;
-			$config_var    = $alt_asset ? '_fazCfg' : '_fazConfig';
 
 			if ( $alt_asset ) {
-				// Serve script inline to avoid ad blocker URL pattern matching.
-				// The plugin directory name contains "cookie" which triggers filter lists.
 				$script_path = plugin_dir_path( __FILE__ ) . 'js/script' . $suffix . '.js';
 				wp_register_script( $script_handle, false, array(), $this->version, false );
 				wp_enqueue_script( $script_handle );
@@ -260,11 +259,7 @@ class Frontend {
 				wp_enqueue_script( $script_handle, plugin_dir_url( __FILE__ ) . 'js/script' . $suffix . '.js', array(), $this->version, false );
 			}
 
-			wp_localize_script( $script_handle, $config_var, $this->get_store_data() );
-			if ( $alt_asset ) {
-				// Bridge the alternative config variable to the expected name.
-				wp_add_inline_script( $script_handle, 'window._fazConfig = window._fazCfg;', 'before' );
-			}
+			wp_localize_script( $script_handle, '_fazConfig', $this->get_store_data() );
 			// Inject template CSS as a proper inline style (nonce-compatible; no unsafe-inline needed).
 			// Utility rules appended AFTER boost_css_specificity() so they are NOT
 			// scoped inside #faz-consent — these classes are used on elements outside
@@ -1763,6 +1758,7 @@ class Frontend {
 		// ── Core infrastructure: WordPress, jQuery, and our own scripts ──
 		$whitelist = array(
 			'faz-cookie-manager',
+			'faz-fw',    // alt-asset mode handle (ad-blocker compatibility)
 			'fazcookie',
 			'fazBannerTemplate',
 			'wp-includes/',
