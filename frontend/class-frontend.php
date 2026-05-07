@@ -247,7 +247,7 @@ class Frontend {
 			$faz_settings = $this->get_faz_settings();
 			$alt_asset = ! empty( $faz_settings['banner_control']['alternative_asset_path'] );
 			$script_handle = $alt_asset ? 'faz-fw' : $this->plugin_name;
-			$config_var    = $alt_asset ? '_fazCfg' : '_fazConfig';
+			$config_var    = '_fazConfig';
 
 			if ( $alt_asset ) {
 				// Serve script inline to avoid ad blocker URL pattern matching.
@@ -265,10 +265,6 @@ class Frontend {
 			}
 
 			wp_localize_script( $script_handle, $config_var, $this->get_store_data() );
-			if ( $alt_asset ) {
-				// Bridge the alternative config variable to the expected name.
-				wp_add_inline_script( $script_handle, 'window._fazConfig = window._fazCfg;', 'before' );
-			}
 			// Inject template CSS as a proper inline style (nonce-compatible; no unsafe-inline needed).
 			// Utility rules appended AFTER boost_css_specificity() so they are NOT
 			// scoped inside #faz-consent — these classes are used on elements outside
@@ -1767,6 +1763,7 @@ class Frontend {
 		// ── Core infrastructure: WordPress, jQuery, and our own scripts ──
 		$whitelist = array(
 			'faz-cookie-manager',
+			'faz-fw',
 			'fazcookie',
 			'fazBannerTemplate',
 			'wp-includes/',
