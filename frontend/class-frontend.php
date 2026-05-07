@@ -23,6 +23,8 @@ use FazCookie\Includes\Gvl;
 use FazCookie\Includes\Known_Providers;
 use FazCookie\Includes\Cookie_Table_Shortcode;
 use FazCookie\Includes\Cookie_Policy_Shortcode;
+use FazCookie\Includes\Do_Not_Sell_Shortcode;
+use FazCookie\Includes\DSAR_Shortcode;
 use FazCookie\Frontend\Includes\Placeholder_Builder;
 /**
  * The public-facing functionality of the plugin.
@@ -118,6 +120,8 @@ class Frontend {
 		new Banner_Rest();
 		new Cookie_Table_Shortcode();
 		new Cookie_Policy_Shortcode();
+		new Do_Not_Sell_Shortcode();
+		new DSAR_Shortcode();
 		new AMP_Consent();
 		new Translation_Compat();
 		add_action( 'init', array( $this, 'load_banner' ) );
