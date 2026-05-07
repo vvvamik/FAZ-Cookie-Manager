@@ -129,18 +129,20 @@ class Cookie extends Store {
 	 */
 	public function get_prepared_data() {
 		return array(
-			'id'            => $this->get_id(),
-			'name'          => $this->get_name(),
-			'slug'          => $this->get_slug(),
-			'description'   => $this->get_description(),
-			'duration'      => $this->get_duration(),
-			'type'          => $this->get_type(),
-			'domain'        => $this->get_domain(),
-			'discovered'    => $this->is_discovered(),
-			'url_pattern'   => $this->get_url_pattern(),
-			'category'      => $this->get_category(),
-			'date_created'  => $this->get_date_created(),
-			'date_modified' => $this->get_date_modified(),
+			'id'             => $this->get_id(),
+			'name'           => $this->get_name(),
+			'slug'           => $this->get_slug(),
+			'description'    => $this->get_description(),
+			'duration'       => $this->get_duration(),
+			'type'           => $this->get_type(),
+			'domain'         => $this->get_domain(),
+			'discovered'     => $this->is_discovered(),
+			'url_pattern'    => $this->get_url_pattern(),
+			'category'       => $this->get_category(),
+			'date_created'   => $this->get_date_created(),
+			'date_modified'  => $this->get_date_modified(),
+			'opt_in_script'  => $this->get_opt_in_script(),
+			'opt_out_script' => $this->get_opt_out_script(),
 		);
 	}
 
@@ -239,16 +241,70 @@ class Cookie extends Store {
 	/**
 	 * Return cookie meta data.
 	 *
+	 * Script keys (opt_in_script, opt_out_script) are preserved as-is because
+	 * sanitize_textarea_field() strips HTML tags, which would corrupt JS code.
+	 * These keys are admin-only and are JSON-encoded before reaching the browser.
+	 *
 	 * @return array
 	 */
 	public function get_meta() {
-		$meta = array();
-		$data = $this->get_object_data( 'meta' );
-		$data = ( isset( $data ) && is_array( $data ) ) ? $data : array();
+		$meta        = array();
+		$raw         = $this->get_object_data( 'meta' );
+		$data        = is_string( $raw ) ? json_decode( $raw, true ) : ( is_array( $raw ) ? $raw : array() );
+		$script_keys = array( 'opt_in_script', 'opt_out_script' );
+		if ( ! is_array( $data ) ) {
+			return $meta;
+		}
 		foreach ( $data as $key => $item ) {
-			$meta[ $key ] = sanitize_textarea_field( $item );
+			$meta[ $key ] = in_array( $key, $script_keys, true )
+				? (string) $item
+				: sanitize_textarea_field( $item );
 		}
 		return $meta;
+	}
+
+	/**
+	 * Return the opt-in script for this cookie (raw JS, admin-only).
+	 *
+	 * @return string
+	 */
+	public function get_opt_in_script() {
+		$meta = $this->get_meta();
+		return isset( $meta['opt_in_script'] ) ? (string) $meta['opt_in_script'] : '';
+	}
+
+	/**
+	 * Return the opt-out script for this cookie (raw JS, admin-only).
+	 *
+	 * @return string
+	 */
+	public function get_opt_out_script() {
+		$meta = $this->get_meta();
+		return isset( $meta['opt_out_script'] ) ? (string) $meta['opt_out_script'] : '';
+	}
+
+	/**
+	 * Set the opt-in script, merging into the existing meta JSON.
+	 *
+	 * @param string $script JavaScript to execute when this cookie's category is accepted.
+	 * @return void
+	 */
+	public function set_opt_in_script( $script ) {
+		$meta                   = $this->get_meta();
+		$meta['opt_in_script']  = (string) $script;
+		$this->set_object_data( 'meta', wp_json_encode( $meta ) );
+	}
+
+	/**
+	 * Set the opt-out script, merging into the existing meta JSON.
+	 *
+	 * @param string $script JavaScript to execute when this cookie's category is rejected or revoked.
+	 * @return void
+	 */
+	public function set_opt_out_script( $script ) {
+		$meta                    = $this->get_meta();
+		$meta['opt_out_script']  = (string) $script;
+		$this->set_object_data( 'meta', wp_json_encode( $meta ) );
 	}
 
 	/**

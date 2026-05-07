@@ -239,8 +239,18 @@ class Cookies_API extends API_Controller {
 					'type'        => 'boolean',
 					'context'     => array( 'view', 'edit' ),
 				),
-				'url_pattern'   => array(
+				'url_pattern'    => array(
 					'description' => __( 'URL patterns for blocking purposes', 'faz-cookie-manager' ),
+					'type'        => 'string',
+					'context'     => array( 'view', 'edit' ),
+				),
+				'opt_in_script'  => array(
+					'description' => __( 'JavaScript executed when this cookie\'s category is accepted.', 'faz-cookie-manager' ),
+					'type'        => 'string',
+					'context'     => array( 'view', 'edit' ),
+				),
+				'opt_out_script' => array(
+					'description' => __( 'JavaScript executed when this cookie\'s category is rejected or revoked.', 'faz-cookie-manager' ),
 					'type'        => 'string',
 					'context'     => array( 'view', 'edit' ),
 				),

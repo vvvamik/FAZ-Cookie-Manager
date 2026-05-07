@@ -2408,6 +2408,9 @@ function _fazAfterConsent() {
         window.dataLayer.push(consentData);
     }
 
+    // Execute per-cookie opt-in/opt-out scripts for categories that changed state.
+    _fazExecuteConsentScripts(_fazCategoriesBeforeConsent);
+
     // Clean up cookies from categories/services the user has not consented to.
     var svcRevoked = _fazCleanupRevokedCookies();
 
@@ -2572,7 +2575,82 @@ function _fazCleanupRevokedCookies() {
         }
     }
 
+    // Web Storage shredding: localStorage and sessionStorage.
+    // Keys are collected before deletion to avoid index-shift bugs during removal.
+    ['localStorage', 'sessionStorage'].forEach(function (storageType) {
+        var storage = window[storageType];
+        if (!storage) return;
+        var keysToDelete = [];
+        for (var si = 0; si < storage.length; si++) {
+            var key = storage.key(si);
+            if (!key) continue;
+            if (_fazIsCookieWhitelisted(key)) continue;
+            var del = false;
+            if (hasCategoryMap) {
+                for (var kPat in cookieMap) {
+                    if (!cookieMap.hasOwnProperty(kPat)) continue;
+                    if (!_fazIsCategoryToBeBlocked(cookieMap[kPat])) continue;
+                    if (_fazCookieNameMatches(key, kPat)) { del = true; break; }
+                }
+            }
+            if (!del && hasSvcMap) {
+                for (var kSvc in svcCookieMap) {
+                    if (!svcCookieMap.hasOwnProperty(kSvc)) continue;
+                    if (_fazCookieNameMatches(key, kSvc)) { del = true; break; }
+                }
+            }
+            if (del) keysToDelete.push(key);
+        }
+        keysToDelete.forEach(function (k) { storage.removeItem(k); });
+    });
+
     return svcRevoked;
+}
+
+/**
+ * Execute opt-in or opt-out scripts for cookies whose category consent changed.
+ * Scripts are defined per-cookie in the admin and grouped by category slug in
+ * _fazStore._cookieScripts. Called from _fazAfterConsent() with the list of
+ * slugs accepted BEFORE the current consent action.
+ *
+ * @param {string[]} prevAccepted Category slugs accepted before this consent action.
+ */
+function _fazExecuteConsentScripts(prevAccepted) {
+    var scripts = _fazStore._cookieScripts;
+    if (!scripts || typeof scripts !== 'object') return;
+    var cats = _fazStore._categories || [];
+    for (var i = 0; i < cats.length; i++) {
+        var slug  = cats[i].slug;
+        var entry = scripts[slug];
+        if (!entry) continue;
+        var wasAccepted = Array.isArray(prevAccepted) && prevAccepted.indexOf(slug) !== -1;
+        var isAccepted  = ref._fazGetFromStore(slug) === 'yes';
+        var toRun = null;
+        if (!wasAccepted && isAccepted && entry.opt_in  && entry.opt_in.length)  toRun = entry.opt_in;
+        if (wasAccepted  && !isAccepted && entry.opt_out && entry.opt_out.length) toRun = entry.opt_out;
+        if (toRun) {
+            toRun.forEach(function (code) { _fazRunScript(code); });
+        }
+    }
+}
+
+/**
+ * Execute a single admin-defined script by injecting a <script> element.
+ * This is the same pattern used by WordPress Custom HTML blocks and many
+ * consent plugins. Only admin-authored code (manage_options) reaches here.
+ *
+ * @param {string} code JavaScript source string.
+ */
+function _fazRunScript(code) {
+    if (!code || typeof code !== 'string') return;
+    try {
+        var el = document.createElement('script');
+        el.textContent = code;
+        document.head.appendChild(el);
+        document.head.removeChild(el);
+    } catch (e) {
+        // Swallowed — admin script errors must not interrupt the consent flow.
+    }
 }
 
 /**

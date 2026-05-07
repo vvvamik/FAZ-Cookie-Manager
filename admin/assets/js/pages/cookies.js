@@ -552,6 +552,8 @@
 			{ label: 'Domain', path: 'domain', type: 'text' },
 			{ label: 'Duration', path: 'duration', type: 'text', placeholder: 'e.g. 1 year' },
 			{ label: 'Description', path: 'description', type: 'textarea' },
+			{ label: 'Opt-in Script (runs when category is accepted)', path: 'opt_in_script', type: 'textarea', placeholder: '// JS executed on consent accept\n// e.g. gtag("event", "consent_granted");' },
+			{ label: 'Opt-out Script (runs when category is rejected/revoked)', path: 'opt_out_script', type: 'textarea', placeholder: '// JS executed on consent reject or revoke' },
 		];
 
 		fields.forEach(function (f) {
