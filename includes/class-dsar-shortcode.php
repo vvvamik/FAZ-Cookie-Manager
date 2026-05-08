@@ -254,6 +254,12 @@ class DSAR_Shortcode {
 			wp_send_json_error( __( 'Please enter a valid email address.', 'faz-cookie-manager' ) );
 		}
 
+		// Per-email rate limit: one submission per email per hour.
+		$email_rl_key = 'faz_dsar_rl_em_' . substr( hash_hmac( 'sha256', strtolower( $email ), wp_salt() ), 0, 16 );
+		if ( false !== get_transient( $email_rl_key ) ) {
+			wp_send_json_error( __( 'Too many requests. Please wait before submitting again.', 'faz-cookie-manager' ) );
+		}
+
 		if ( ! in_array( $type, $valid_types, true ) ) {
 			wp_send_json_error( __( 'Please select a valid request type.', 'faz-cookie-manager' ) );
 		}
@@ -262,6 +268,8 @@ class DSAR_Shortcode {
 		if ( $msg_len > self::MESSAGE_MAX_LENGTH ) {
 			wp_send_json_error( __( 'Your message is too long. Please limit it to 5,000 characters.', 'faz-cookie-manager' ) );
 		}
+
+		set_transient( $email_rl_key, 1, HOUR_IN_SECONDS );
 
 		$post_id = $this->store_request( $name, $email, $type, $message );
 		$this->notify_admin( $name, $email, $type, $message, $post_id, $admin_email );

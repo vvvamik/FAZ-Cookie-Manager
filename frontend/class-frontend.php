@@ -1789,7 +1789,10 @@ class Frontend {
 			return false !== strpos( ltrim( strtolower( $value ), '/' ), ltrim( strtolower( $pattern ), '/' ) );
 		}
 
-		return false !== stripos( $value, $pattern );
+		// Class and ID values: split by whitespace and require an exact token
+		// match so that pattern "analytics" does not match "faz-analytics-helper".
+		$tokens = preg_split( '/\s+/', strtolower( $value ), -1, PREG_SPLIT_NO_EMPTY );
+		return in_array( strtolower( $pattern ), $tokens, true );
 	}
 
 	/**

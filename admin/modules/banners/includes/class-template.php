@@ -432,6 +432,18 @@ class Template {
 						continue;
 					}
 				}
+				// Close button: Garante Privacy Provv. 10/06/2021 — hide the X when
+				// the Reject button is present. Two dismissal paths of different visual
+				// weight (X = neutral-looking, Reject = labelled) on the same banner
+				// constitutes a recognised dark pattern (ambiguità multipla scelta).
+				if ( 'close-button' === $tag ) {
+					$reject_cfg     = faz_array_search( $configs, 'tag', 'reject-button' );
+					$reject_enabled = ! $reject_cfg || ! isset( $reject_cfg['status'] ) || true === $reject_cfg['status'];
+					if ( $reject_enabled ) {
+						$element->parentNode->removeChild( $element ); //phpcs:ignore WordPress.NamingConventions.ValidVariableName
+						continue;
+					}
+				}
 				// Brand logo: set img src from config meta.url (custom upload).
 				if ( 'brand-logo' === $tag && isset( $config['meta']['url'] ) && '#' !== $config['meta']['url'] ) {
 					$logo_imgs = $element->getElementsByTagName( 'img' );

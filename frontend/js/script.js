@@ -365,7 +365,11 @@ function _fazInitOperations() {
     if (!ref._fazGetFromStore("action") || _fazPreviewEnabled()) {
         _fazShowBanner();
         _fazSetInitialState();
-        _fazSetConsentID();
+        // Do NOT call _fazSetConsentID() here — the consentid is a stable
+        // 32-char random tracker written into fazcookie-consent. Generating it
+        // before the user acts creates a persistent fingerprint before consent,
+        // violating ePrivacy Art. 5(3). It is generated lazily inside
+        // _fazAcceptCookies() on the first user action.
     } else {
         _fazRemoveBanner();
         // Returning visitors with a stored "consent:yes" cookie still need the
@@ -415,7 +419,13 @@ function _fazToggleAriaExpandStatus(selector, forceDefault = null) {
  */
 function _fazSetInitialState() {
     const activeLaw = _fazGetLaw()
-    ref._fazSetInStore("consent", "no");
+    // Write only to the in-memory Map — do NOT call _fazSetInStore() here.
+    // _fazSetInStore() serialises and writes fazcookie-consent on every call,
+    // which would set a stable tracker (consentid) before the user takes any
+    // action — a violation of ePrivacy Directive Art. 5(3). The cookie is
+    // written for the first time only when the user clicks Accept / Reject
+    // (inside _fazAcceptCookies via _fazSetInStore).
+    ref._fazConsentStore.set("consent", "no");
     const ccpaCheckBoxValue = _fazFindCheckBoxValue();
     const responseCategories = { accepted: [], rejected: [], action: 'init' };
     for (const category of _fazStore._categories) {
@@ -432,7 +442,7 @@ function _fazSetInitialState() {
         }
         if (valueToSet === "no") responseCategories.rejected.push(category.slug);
         else responseCategories.accepted.push(category.slug);
-        ref._fazSetInStore(`${category.slug}`, valueToSet);
+        ref._fazConsentStore.set(category.slug, valueToSet);
     }
     _fazUnblock();
     _fazFireEvent(responseCategories);
@@ -1419,6 +1429,10 @@ function _fazAcceptCookies(choice = "all") {
     const ccpaCheckBoxValue = _fazFindCheckBoxValue();
     _fazClearStoredServiceConsent();
 
+    // Generate a consentid now (first user action) — deferred from init so no
+    // stable tracker is created before the user gives or refuses consent.
+    _fazSetConsentID();
+
     ref._fazSetInStore("action", "yes");
     if (activeLaw === 'gdpr') {
         ref._fazSetInStore("consent", choice === "reject" ? "no" : "yes");
@@ -2261,12 +2275,15 @@ function _fazShouldChangeType(element, src) {
 (function _fazNetworkInterceptors() {
     /**
      * Extract a clean hostname+path from a URL string for provider matching.
+     * Handles https://, http://, wss:// and ws:// schemes.
      * Returns empty string on failure (non-blocking).
      */
     function _fazExtractEndpoint(url) {
         if (!url || typeof url !== "string") return "";
         try {
             var full = url.startsWith("//") ? window.location.protocol + url : url;
+            // Normalise WebSocket schemes to https so URL() can parse them.
+            full = full.replace(/^wss?:\/\//i, 'https://');
             if (!/^https?:\/\//i.test(full)) return "";
             var u = new URL(full);
             return _fazCleanHostName(u.hostname + u.pathname);
@@ -2328,6 +2345,47 @@ function _fazShouldChangeType(element, src) {
         }
         return _fazOrigXHRSend.apply(this, arguments);
     };
+
+    // --- WebSocket (wss:// / ws://) ---
+    // Some tracking SDKs (e.g. Mixpanel live-view, Segment, Hotjar) open a
+    // WebSocket instead of, or in addition to, HTTP requests. Without
+    // interception those connections bypass the fetch/XHR wrappers above.
+    if (typeof WebSocket !== 'undefined') {
+        var _fazOrigWebSocket = window.WebSocket;
+        window.WebSocket = function (url, protocols) {
+            var endpoint = _fazExtractEndpoint(url);
+            if (endpoint && !_fazIsUserWhitelisted(url) && _fazShouldBlockProvider(endpoint)) {
+                // Return a mock WebSocket that immediately transitions to CLOSED.
+                // Using Object.create keeps instanceof checks working for callers
+                // that test `ws instanceof WebSocket`.
+                var mock = Object.create(_fazOrigWebSocket.prototype);
+                Object.defineProperty(mock, 'readyState', { get: function () { return 3; /* CLOSED */ } });
+                Object.defineProperty(mock, 'bufferedAmount', { get: function () { return 0; } });
+                Object.defineProperty(mock, 'url', { get: function () { return url; } });
+                mock.send = function () {};
+                mock.close = function () {};
+                // Fire the close event asynchronously so the caller can attach
+                // handlers before it fires (same as a normal network failure).
+                setTimeout(function () {
+                    try {
+                        if (typeof mock.onclose === 'function') {
+                            mock.onclose(new CloseEvent('close', { wasClean: false, code: 1001, reason: 'blocked' }));
+                        }
+                    } catch (e) { /* ignore */ }
+                }, 0);
+                return mock;
+            }
+            return typeof protocols !== 'undefined'
+                ? new _fazOrigWebSocket(url, protocols)
+                : new _fazOrigWebSocket(url);
+        };
+        // Copy static constants so code checking WebSocket.OPEN etc. still works.
+        window.WebSocket.prototype   = _fazOrigWebSocket.prototype;
+        window.WebSocket.CONNECTING  = _fazOrigWebSocket.CONNECTING;
+        window.WebSocket.OPEN        = _fazOrigWebSocket.OPEN;
+        window.WebSocket.CLOSING     = _fazOrigWebSocket.CLOSING;
+        window.WebSocket.CLOSED      = _fazOrigWebSocket.CLOSED;
+    }
 })();
 
 /**
@@ -2414,6 +2472,46 @@ function _fazAfterConsent() {
 
     // Clean up cookies from categories/services the user has not consented to.
     var svcRevoked = _fazCleanupRevokedCookies();
+
+    // Best-effort cleanup of IndexedDB databases and Cache Storage entries
+    // that belong to blocked tracking providers (e.g. Mixpanel, PWA trackers).
+    // Both APIs are async and non-blocking; failures are silently swallowed.
+    // Note: _fazExtractEndpoint is scoped inside _fazNetworkInterceptors, so we
+    // use a local helper that mirrors its normalisation logic.
+    (function _fazCleanupStorageAPIs() {
+        function _fazHostFromString(s) {
+            try {
+                var url = (s.indexOf('://') === -1) ? 'https://' + s : s.replace(/^wss?:\/\//i, 'https://');
+                return _fazCleanHostName(new URL(url).hostname);
+            } catch (e) { return ''; }
+        }
+        // IndexedDB: supported in all modern browsers; `databases()` returns a
+        // list of {name, version} objects. Names are app-specific (not always
+        // domain-based), so this catches well-known patterns only.
+        if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
+            indexedDB.databases().then(function (dbs) {
+                dbs.forEach(function (db) {
+                    if (!db || !db.name) return;
+                    var ep = _fazHostFromString(db.name);
+                    if (ep && _fazShouldBlockProvider(ep)) {
+                        indexedDB.deleteDatabase(db.name);
+                    }
+                });
+            }).catch(function () {});
+        }
+        // Cache Storage (Service Worker caches): cache names are arbitrary strings
+        // set by the SW; we try to match them against the provider list.
+        if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+            caches.keys().then(function (names) {
+                names.forEach(function (name) {
+                    var ep = _fazHostFromString(name);
+                    if (ep && _fazShouldBlockProvider(ep)) {
+                        caches.delete(name);
+                    }
+                });
+            }).catch(function () {});
+        }
+    })();
 
     // Detect category revocation: executed JavaScript cannot be unloaded,
     // so we must reload the page for the server to omit those scripts.
@@ -3373,6 +3471,17 @@ window.addEventListener('message', function(event) {
         var consent = event.data.consent;
         if (typeof consent !== 'string' || consent.length > 2048) return;
         if (!/^[A-Za-z0-9._:+/=\-]+(,[A-Za-z0-9._:+/=\-]+)*$/.test(consent)) return;
+
+        // Require that the source user actually took a consent action (action:yes
+        // present in the forwarded string). This prevents default/unconsented state
+        // from being forwarded and also makes XSS-forged forwards harder — the
+        // attacker would need to know the exact cookie format to include action:yes.
+        if (!/(?:^|,)action:yes(?:,|$)/.test(consent)) return;
+
+        // Do not override an explicit local user action: if this page already has
+        // action:yes the visitor has already chosen; forwarding must not upgrade
+        // their choice (e.g. reject → accept) without their knowledge.
+        if (ref._fazGetFromStore("action") === "yes") return;
 
         // Clear any vendor/TCF cookies the recipient domain may have from
         // a previous (possibly more permissive) choice. Without this, a
