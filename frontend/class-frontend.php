@@ -1791,8 +1791,17 @@ class Frontend {
 
 		// Class and ID values: split by whitespace and require an exact token
 		// match so that pattern "analytics" does not match "faz-analytics-helper".
-		$tokens = preg_split( '/\s+/', strtolower( $value ), -1, PREG_SPLIT_NO_EMPTY );
-		return in_array( strtolower( $pattern ), $tokens, true );
+		// Also allow hyphen-prefix matching so "faz-cookie-manager" matches
+		// WordPress-generated IDs like "faz-cookie-manager-js-extra" (the
+		// wp_localize_script suffix added automatically by WP core).
+		$tokens        = preg_split( '/\s+/', strtolower( $value ), -1, PREG_SPLIT_NO_EMPTY );
+		$lower_pattern = strtolower( $pattern );
+		foreach ( $tokens as $token ) {
+			if ( $token === $lower_pattern || 0 === strpos( $token, $lower_pattern . '-' ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -3529,6 +3538,17 @@ class Frontend {
 			return $tag;
 		}
 		if ( true === faz_disable_banner() || $this->is_banner_disabled_by_settings() || $this->is_blocking_disabled_for_page() ) {
+			return $tag;
+		}
+		// Guard: never block FAZ's own localize/translation/config inline scripts.
+		// wp_localize_script() emits a <script id="faz-cookie-manager-js-extra"> tag
+		// whose content includes category slugs like "analytics" — which would otherwise
+		// be matched by the provider pattern and blocked, preventing window._fazConfig
+		// from being defined and crashing the entire banner.
+		if (
+			( '' !== $handle && ( 0 === strpos( $handle, 'faz-cookie-manager' ) || 0 === strpos( $handle, 'faz-fw' ) ) ) ||
+			( '' !== $id && ( 0 === strpos( $id, 'faz-cookie-manager' ) || 0 === strpos( $id, 'faz-fw' ) ) )
+		) {
 			return $tag;
 		}
 		// Extract attributes and inline content separately so the whitelist

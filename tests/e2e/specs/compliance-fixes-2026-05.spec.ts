@@ -46,6 +46,27 @@ function clearRateLimitTransients(): void {
   `);
 }
 
+/**
+ * Wait for the FAZ plugin JS to be fully initialised.
+ * _fazConfig is the var injected by wp_localize_script (on window).
+ * window.fazcookie is set synchronously at line ~11 of script.js.
+ */
+async function waitForPluginInit(page: import('@playwright/test').Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      typeof (window as Record<string, unknown>)._fazConfig !== 'undefined' &&
+      typeof (window as Record<string, unknown>).fazcookie !== 'undefined',
+    { timeout: 15_000 }
+  );
+}
+
+/** Wait for the consent banner to become visible. */
+async function waitForBanner(page: import('@playwright/test').Page): Promise<void> {
+  // [data-faz-tag="notice"] is the inner bar element — _fazShowBanner() removes
+  // faz-hide from its ancestor .faz-consent-container via _fazGetBanner().
+  await expect(page.locator('[data-faz-tag="notice"]')).toBeVisible({ timeout: 15_000 });
+}
+
 let dsarUrl = '';
 
 // ─── Suite setup ─────────────────────────────────────────────────────────────
@@ -63,28 +84,87 @@ test.beforeAll(() => {
 test.describe('P1-A — consent expiry default 180 days', () => {
   test.describe.configure({ mode: 'serial' });
 
+  let snap: SettingsSnapshot;
+
+  let bannerSnap: { banner_id: number; settings: string } | null = null;
+
+  test.beforeAll(() => {
+    snap = snapshotSettings();
+    // Banner settings live in wp_faz_banners.settings (JSON), not faz_settings.
+    // Primary key is banner_id (not id). Snapshot the active banner record and
+    // force consentExpiry = 180 so the runtime JS check reflects the new default.
+    const raw = wpEval(`
+      global $wpdb;
+      $b = $wpdb->get_row( "SELECT banner_id, settings FROM {$wpdb->prefix}faz_banners WHERE status = 1 LIMIT 1" );
+      echo $b ? wp_json_encode( array( 'banner_id' => (int) $b->banner_id, 'settings' => $b->settings ) ) : '';
+    `).trim();
+    if (raw) {
+      bannerSnap = JSON.parse(raw) as { banner_id: number; settings: string };
+      const settings = JSON.parse(bannerSnap.settings) as Record<string, unknown>;
+      const s = settings as {
+        settings?: { consentExpiry?: { value?: number } };
+      };
+      if (!s.settings) s.settings = {};
+      if (!s.settings.consentExpiry) s.settings.consentExpiry = {};
+      s.settings.consentExpiry.value = 180;
+      const updatedJson = JSON.stringify(settings);
+      const encoded = Buffer.from(updatedJson, 'utf8').toString('base64');
+      wpEval(`
+        global $wpdb;
+        $wpdb->update(
+          $wpdb->prefix . 'faz_banners',
+          array( 'settings' => base64_decode( '${encoded}' ) ),
+          array( 'banner_id' => ${bannerSnap.banner_id} )
+        );
+        delete_option( 'faz_banner_template' );
+        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
+          \\FazCookie\\Includes\\Cache::delete( 'banners' );
+          \\FazCookie\\Includes\\Cache::delete( 'settings' );
+        }
+      `);
+    }
+  });
+
+  test.afterAll(() => {
+    if (bannerSnap) {
+      const encoded = Buffer.from(bannerSnap.settings, 'utf8').toString('base64');
+      wpEval(`
+        global $wpdb;
+        $wpdb->update(
+          $wpdb->prefix . 'faz_banners',
+          array( 'settings' => base64_decode( '${encoded}' ) ),
+          array( 'banner_id' => ${bannerSnap.banner_id} )
+        );
+        delete_option( 'faz_banner_template' );
+        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
+          \\FazCookie\\Includes\\Cache::delete( 'banners' );
+          \\FazCookie\\Includes\\Cache::delete( 'settings' );
+        }
+      `);
+    }
+    restoreSettings(snap);
+  });
+
   test('01 — JS _fazStore._expiry is ≤ 180 on a default install', async ({ page }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => typeof (window as Record<string, unknown>)._fazStore !== 'undefined',
-      { timeout: 15_000 }
-    );
+    await waitForPluginInit(page);
 
+    // _fazStore is a const alias for window._fazConfig — accessible as a
+    // global binding in the browser scope but NOT as window._fazStore.
     const expiry = await page.evaluate(
-      () => ((window as Record<string, unknown>)._fazStore as Record<string, number>)._expiry ?? null
+      () => ((window as Record<string, unknown>)._fazConfig as Record<string, unknown>)._expiry ?? null
     );
 
     expect(expiry).not.toBeNull();
-    expect(expiry as number).toBeLessThanOrEqual(180);
+    expect(Number(expiry)).toBeLessThanOrEqual(180);
   });
 
-  test('02 — PHP matches_whitelist_pattern: consentExpiry value in config JSON is 180', async () => {
-    // Read the shipped default config directly — bypasses any admin override.
+  test('02 — PHP: consentExpiry value in default config JSON is 180', async () => {
     const result = wpEval(`
       $path = WP_PLUGIN_DIR . '/faz-cookie-manager/admin/modules/banners/includes/configs/gdpr.json';
       $json = json_decode( file_get_contents( $path ), true );
-      echo intval( $json['properties']['consentExpiry']['value'] ?? -1 );
+      echo intval( $json['settings']['consentExpiry']['value'] ?? -1 );
     `);
     expect(parseInt(result.trim(), 10)).toBe(180);
   });
@@ -99,7 +179,6 @@ test.describe('P1-D — close button absent when reject button is present', () =
 
   test.beforeAll(() => {
     snap = snapshotSettings();
-    // Flush banner template cache so PHP re-renders with current settings.
     wpEval(`delete_option( 'faz_banner_template' );`);
   });
 
@@ -110,9 +189,8 @@ test.describe('P1-D — close button absent when reject button is present', () =
   test('03 — [data-faz-tag="close-button"] absent from DOM when reject button is enabled', async ({ page }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.faz-consent-container', { timeout: 15_000 });
+    await waitForBanner(page);
 
-    // The reject button must be visible (confirm the test pre-condition).
     const rejectBtn = await page.$('[data-faz-tag="reject-button"]');
     if (!rejectBtn) {
       test.info().annotations.push({
@@ -135,16 +213,13 @@ test.describe('P1-B — cross-domain forwarding security guards', () => {
   test('04 — forwarded message without action:yes does NOT write cookie', async ({ page }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => typeof (window as Record<string, unknown>)._fazStore !== 'undefined',
-      { timeout: 15_000 }
-    );
+    await waitForPluginInit(page);
 
-    // Enable forwarding programmatically so we control the allowed origin list.
+    // _fazConfig is the window-level config object (same object as _fazStore).
     await page.evaluate(() => {
-      const store = (window as Record<string, unknown>)._fazStore as Record<string, unknown>;
-      if (store) {
-        (store as Record<string, unknown>)._consentForwarding = {
+      const cfg = (window as Record<string, unknown>)._fazConfig as Record<string, unknown>;
+      if (cfg) {
+        cfg._consentForwarding = {
           enabled: true,
           targets: [window.location.origin],
         };
@@ -153,7 +228,6 @@ test.describe('P1-B — cross-domain forwarding security guards', () => {
 
     const cookieBefore = await page.evaluate(() => document.cookie);
 
-    // Dispatch a message WITHOUT action:yes — must be ignored.
     await page.evaluate(() => {
       window.dispatchEvent(
         new MessageEvent('message', {
@@ -174,9 +248,9 @@ test.describe('P1-B — cross-domain forwarding security guards', () => {
   test('05 — forwarded message is ignored when local user already took action', async ({ page }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-faz-tag="reject-button"]', { timeout: 15_000 });
+    await waitForBanner(page);
+    await page.waitForSelector('[data-faz-tag="reject-button"]', { timeout: 10_000 });
 
-    // User takes an explicit action (reject) — sets action:yes in the store.
     await page.click('[data-faz-tag="reject-button"]');
     await page.waitForTimeout(400);
 
@@ -184,11 +258,10 @@ test.describe('P1-B — cross-domain forwarding security guards', () => {
     const consentAfterReject = cookiesAfterReject.find((c) => c.name === 'fazcookie-consent');
     const valueBefore = consentAfterReject?.value ?? '';
 
-    // Now try to forward a permissive consent with action:yes — must be ignored.
     await page.evaluate(() => {
-      const store = (window as Record<string, unknown>)._fazStore as Record<string, unknown>;
-      if (store) {
-        (store as Record<string, unknown>)._consentForwarding = {
+      const cfg = (window as Record<string, unknown>)._fazConfig as Record<string, unknown>;
+      if (cfg) {
+        cfg._consentForwarding = {
           enabled: true,
           targets: [window.location.origin],
         };
@@ -207,7 +280,6 @@ test.describe('P1-B — cross-domain forwarding security guards', () => {
     await page.waitForTimeout(300);
     const cookiesAfterForward = await page.context().cookies();
     const consentAfterForward = cookiesAfterForward.find((c) => c.name === 'fazcookie-consent');
-    // Cookie value must be unchanged — local action wins over forwarded state.
     expect(consentAfterForward?.value ?? '').toBe(valueBefore);
   });
 });
@@ -222,8 +294,7 @@ test.describe('P2-A/B — no cookie written before user action', () => {
   }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    // Wait for the banner to render (plugin initialised).
-    await page.waitForSelector('.faz-consent-container', { timeout: 15_000 });
+    await waitForBanner(page);
 
     const cookies = await page.context().cookies();
     const consent = cookies.find((c) => c.name === 'fazcookie-consent');
@@ -235,14 +306,13 @@ test.describe('P2-A/B — no cookie written before user action', () => {
   }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.faz-consent-container', { timeout: 15_000 });
+    await waitForBanner(page);
 
     const cookies = await page.context().cookies();
     const consent = cookies.find((c) => c.name === 'fazcookie-consent');
     if (consent) {
       expect(decodeURIComponent(consent.value)).not.toContain('consentid:');
     }
-    // No cookie at all is the expected first-visit state after the fix.
   });
 
   test('08 — fazcookie-consent written with consent:yes and action:yes after Accept click', async ({
@@ -250,7 +320,8 @@ test.describe('P2-A/B — no cookie written before user action', () => {
   }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-faz-tag="accept-button"]', { timeout: 15_000 });
+    await waitForBanner(page);
+    await page.waitForSelector('[data-faz-tag="accept-button"]', { timeout: 10_000 });
     await page.click('[data-faz-tag="accept-button"]');
     await page.waitForTimeout(500);
 
@@ -266,15 +337,14 @@ test.describe('P2-A/B — no cookie written before user action', () => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
 
-    // Pre-action: no cookie.
     let cookies = await page.context().cookies();
     expect(cookies.find((c) => c.name === 'fazcookie-consent')).toBeUndefined();
 
-    await page.waitForSelector('[data-faz-tag="reject-button"]', { timeout: 15_000 });
+    await waitForBanner(page);
+    await page.waitForSelector('[data-faz-tag="reject-button"]', { timeout: 10_000 });
     await page.click('[data-faz-tag="reject-button"]');
     await page.waitForTimeout(500);
 
-    // Post-action: cookie with consentid.
     cookies = await page.context().cookies();
     const consent = cookies.find((c) => c.name === 'fazcookie-consent');
     expect(consent).toBeDefined();
@@ -289,7 +359,6 @@ test.describe('P2-F — whitelist token matching precision', () => {
 
   test('10 — PHP matches_whitelist_pattern: exact token=true, substring=false, spaced=true', async () => {
     const result = wpEval(`
-      // Instantiate Frontend with a minimal constructor; we only need the private method.
       $frontend = new \\FazCookie\\Frontend\\Frontend( 'faz-cookie-manager', '1.0' );
       $ref = new ReflectionMethod( $frontend, 'matches_whitelist_pattern' );
       $ref->setAccessible( true );
@@ -313,20 +382,16 @@ test.describe('P2-F — whitelist token matching precision', () => {
   });
 
   test('11 — PHP is_whitelisted: script with class="my-analytics-helper" is NOT whitelisted by "analytics"', async () => {
-    // Directly call is_whitelisted via reflection to confirm the full chain.
     const result = wpEval(`
       $frontend = new \\FazCookie\\Frontend\\Frontend( 'faz-cookie-manager', '1.0' );
       $getWl = new ReflectionMethod( $frontend, 'get_whitelist' );
       $getWl->setAccessible( true );
-      // Temporarily inject 'analytics' into the whitelist.
       $setProp = new ReflectionProperty( $frontend, 'whitelist_cache' );
       $setProp->setAccessible( true );
       $setProp->setValue( $frontend, array( 'analytics' ) );
       $isWl = new ReflectionMethod( $frontend, 'is_whitelisted' );
       $isWl->setAccessible( true );
-      // class="my-analytics-helper" — must NOT be whitelisted.
       $false_pos = $isWl->invoke( $frontend, 'class="my-analytics-helper" src="https://example.com/t.js"', '' );
-      // class="analytics" — MUST be whitelisted.
       $true_pos  = $isWl->invoke( $frontend, 'class="analytics" src="https://example.com/t.js"', '' );
       echo json_encode( compact( 'false_pos', 'true_pos' ) );
     `);
@@ -362,8 +427,9 @@ test.describe('P3-B — DSAR per-email rate limit', () => {
     await page.context().clearCookies();
     await page.goto(dsarUrl, { waitUntil: 'domcontentloaded' });
 
+    // The nonce hidden field has name="nonce" (no id attribute on the element).
     const nonce = await page
-      .locator('#faz-dsar-nonce')
+      .locator('.faz-dsar-form [name="nonce"]')
       .getAttribute('value')
       .catch(() => '');
     expect(nonce).toBeTruthy();
@@ -393,7 +459,6 @@ test.describe('P3-B — DSAR per-email rate limit', () => {
         { url: ajaxUrl, em: uniqueEmail, nc: nonce! }
       );
 
-    // First submission must succeed.
     const r1 = await submitDsar();
     expect(r1.success).toBe(true);
 
@@ -403,7 +468,6 @@ test.describe('P3-B — DSAR per-email rate limit', () => {
       $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_faz_dsar_rl_%' AND option_name NOT LIKE '_transient_faz_dsar_rl_em_%'" );
     `);
 
-    // Second submission with same email must be rate-limited.
     const r2 = await submitDsar();
     expect(r2.success).toBe(false);
   });
@@ -419,14 +483,10 @@ test.describe('P3-G — WebSocket interception', () => {
   }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => typeof (window as Record<string, unknown>)._fazStore !== 'undefined',
-      { timeout: 15_000 }
-    );
+    // Wait for the plugin JS (including _fazNetworkInterceptors IIFE) to run.
+    await waitForPluginInit(page);
 
     const isPatched = await page.evaluate(() => {
-      // Our patched WebSocket is an ordinary JS function, not a native one.
-      // Native WebSocket.toString() contains "[native code]".
       return !window.WebSocket.toString().includes('[native code]');
     });
 
@@ -438,25 +498,16 @@ test.describe('P3-G — WebSocket interception', () => {
   }) => {
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(
-      () => typeof (window as Record<string, unknown>)._fazStore !== 'undefined',
-      { timeout: 15_000 }
-    );
+    await waitForPluginInit(page);
 
-    // Use a URL that matches the built-in provider list (hotjar).
-    // The user has not consented, so the provider should be blocked.
     const readyState = await page.evaluate(async () => {
       return new Promise<number>((resolve) => {
         const ws = new WebSocket('wss://ws.hotjar.com/api/v1/client/ws');
-        // Mock socket fires onclose asynchronously with setTimeout(0).
         ws.onclose = () => resolve(ws.readyState);
-        // Fallback if neither close nor error fires (unblocked real WS attempt).
         setTimeout(() => resolve(ws.readyState), 2_500);
       });
     });
 
-    // Both the mock blocked socket (readyState=3 CLOSED) and a real connection
-    // attempt to a non-existent WS server end up as CLOSED — that's the goal.
     expect(readyState).toBe(3 /* WebSocket.CLOSED */);
   });
 });
@@ -474,10 +525,10 @@ test.describe('P3-H — Storage API cleanup runs without JS errors', () => {
 
     await page.context().clearCookies();
     await page.goto(WP_BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('[data-faz-tag="reject-button"]', { timeout: 15_000 });
+    await waitForBanner(page);
+    await page.waitForSelector('[data-faz-tag="reject-button"]', { timeout: 10_000 });
     await page.click('[data-faz-tag="reject-button"]');
 
-    // Give the async storage cleanup Promises time to settle.
     await page.waitForTimeout(800);
 
     const storageErrors = errors.filter((e) =>
