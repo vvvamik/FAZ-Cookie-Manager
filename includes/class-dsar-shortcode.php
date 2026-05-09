@@ -342,17 +342,8 @@ class DSAR_Shortcode {
 			$admin_email = get_option( 'admin_email' );
 		}
 
-		$site_name = get_bloginfo( 'name' );
-
-		$type_labels = array(
-			'access'      => __( 'Right of Access (Art. 15 GDPR)', 'faz-cookie-manager' ),
-			'erasure'     => __( 'Right to Erasure (Art. 17 GDPR)', 'faz-cookie-manager' ),
-			'portability' => __( 'Right to Data Portability (Art. 20 GDPR)', 'faz-cookie-manager' ),
-			'rectify'     => __( 'Right to Rectification (Art. 16 GDPR)', 'faz-cookie-manager' ),
-			'restrict'    => __( 'Right to Restrict Processing (Art. 18 GDPR)', 'faz-cookie-manager' ),
-			'object'      => __( 'Right to Object (Art. 21 GDPR)', 'faz-cookie-manager' ),
-		);
-		$type_label = isset( $type_labels[ $type ] ) ? $type_labels[ $type ] : $type;
+		$site_name  = get_bloginfo( 'name' );
+		$type_label = $this->get_type_label( $type );
 
 		$body = sprintf(
 			/* translators: 1: site name, 2: name, 3: email, 4: request type, 5: date, 6: message */
@@ -389,18 +380,38 @@ class DSAR_Shortcode {
 	 * Send a confirmation email to the requester.
 	 */
 	private function send_confirmation( $name, $email, $type ) {
-		$site_name = get_bloginfo( 'name' );
+		$site_name  = get_bloginfo( 'name' );
+		$type_label = $this->get_type_label( $type );
 
 		wp_mail(
 			$email,
 			/* translators: %s: site name */
 			sprintf( __( '[%s] We received your data request', 'faz-cookie-manager' ), $site_name ),
 			sprintf(
-				/* translators: 1: first name, 2: site name */
-				__( "Dear %1\$s,\n\nWe have received your data subject request on %2\$s.\n\nWe will process your request and respond within 30 days as required by GDPR Article 12.\n\nIf you have any questions, please reply to this email.\n\nThank you,\nThe %2\$s team", 'faz-cookie-manager' ),
+				/* translators: 1: first name, 2: site name, 3: human-readable request type (e.g. "Right of Access (Art. 15 GDPR)") */
+				__( "Dear %1\$s,\n\nWe have received your data subject request (%3\$s) on %2\$s.\n\nWe will process your request and respond within 30 days as required by GDPR Article 12.\n\nIf you have any questions, please reply to this email.\n\nThank you,\nThe %2\$s team", 'faz-cookie-manager' ),
 				$name,
-				$site_name
+				$site_name,
+				$type_label
 			)
 		);
+	}
+
+	/**
+	 * Map a DSAR type key to a human-readable label.
+	 *
+	 * @param string $type One of: access, erasure, portability, rectify, restrict, object.
+	 * @return string Translated label, or the raw key as fallback.
+	 */
+	private function get_type_label( $type ) {
+		$labels = array(
+			'access'      => __( 'Right of Access (Art. 15 GDPR)', 'faz-cookie-manager' ),
+			'erasure'     => __( 'Right to Erasure (Art. 17 GDPR)', 'faz-cookie-manager' ),
+			'portability' => __( 'Right to Data Portability (Art. 20 GDPR)', 'faz-cookie-manager' ),
+			'rectify'     => __( 'Right to Rectification (Art. 16 GDPR)', 'faz-cookie-manager' ),
+			'restrict'    => __( 'Right to Restrict Processing (Art. 18 GDPR)', 'faz-cookie-manager' ),
+			'object'      => __( 'Right to Object (Art. 21 GDPR)', 'faz-cookie-manager' ),
+		);
+		return isset( $labels[ $type ] ) ? $labels[ $type ] : $type;
 	}
 }
