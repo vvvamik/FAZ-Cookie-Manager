@@ -99,12 +99,25 @@ function getPermalink(slug: string): string {
 function clearRateLimitState(): void {
   wpEval(`
     global $wpdb;
+    // Collect rl_key names from the DB before deleting so we can flush the
+    // object cache group as well (needed when Redis/Memcached is active).
+    $rows = $wpdb->get_col(
+      "SELECT option_name FROM {$wpdb->options}
+       WHERE option_name LIKE '_transient_faz_dnsmpi_%'
+          OR option_name LIKE '_transient_faz_dsar_%'"
+    );
     $wpdb->query(
       "DELETE FROM {$wpdb->options}
        WHERE option_name LIKE '_transient_faz_dnsmpi_%'
           OR option_name LIKE '_transient_faz_dsar_%'
           OR option_name LIKE 'faz_dnsmpi_lock_%'"
     );
+    // Strip the '_transient_' prefix to get the bare cache key and flush
+    // any Redis/Memcached entry that may still be holding the lock.
+    foreach ($rows as $opt) {
+      $key = preg_replace('/^_transient_/', '', $opt);
+      wp_cache_delete($key, 'faz_rate_limit');
+    }
   `);
 }
 
@@ -181,9 +194,11 @@ test.describe('REST API — opt_in/opt_out_script context restriction', () => {
 
   test('REST-CTX-01: opt_in_script absent from unauthenticated GET (default view context)', async ({
     wpBaseURL,
+    request,
   }) => {
+    // Fresh APIRequestContext: no browser cookies, no WP auth session.
     // No X-WP-Nonce, no ?context=edit — public response must not expose raw JS.
-    const res = await adminPage.request.get(
+    const res = await request.get(
       `${wpBaseURL}/?rest_route=/faz/v1/cookies/${testCookieId}`,
     );
     const body = (await res.json()) as Record<string, unknown>;
@@ -445,20 +460,24 @@ test.describe('DSAR CPT — capability mapping', () => {
       $cpt = get_post_type_object('faz_dsar');
       if (!$cpt) { echo 'null'; return; }
       echo wp_json_encode(array(
-        'read_post'    => $cpt->cap->read_post,
-        'edit_post'    => $cpt->cap->edit_post,
-        'delete_post'  => $cpt->cap->delete_post,
-        'edit_posts'   => $cpt->cap->edit_posts,
-        'create_posts' => $cpt->cap->create_posts,
+        'read_post'          => $cpt->cap->read_post,
+        'read_private_posts' => $cpt->cap->read_private_posts,
+        'edit_post'          => $cpt->cap->edit_post,
+        'edit_private_posts' => $cpt->cap->edit_private_posts,
+        'delete_post'        => $cpt->cap->delete_post,
+        'edit_posts'         => $cpt->cap->edit_posts,
+        'create_posts'       => $cpt->cap->create_posts,
       ));
     `);
     expect(raw.trim(), 'faz_dsar post type must be registered').not.toBe('null');
 
     const caps = JSON.parse(raw) as Record<string, string>;
-    expect(caps.read_post,    'read_post').toBe('manage_options');
-    expect(caps.edit_post,    'edit_post').toBe('manage_options');
-    expect(caps.delete_post,  'delete_post').toBe('manage_options');
-    expect(caps.create_posts, 'create_posts').toBe('do_not_allow');
+    expect(caps.read_post,          'read_post').toBe('manage_options');
+    expect(caps.read_private_posts, 'read_private_posts').toBe('manage_options');
+    expect(caps.edit_post,          'edit_post').toBe('manage_options');
+    expect(caps.edit_private_posts, 'edit_private_posts').toBe('manage_options');
+    expect(caps.delete_post,        'delete_post').toBe('manage_options');
+    expect(caps.create_posts,       'create_posts').toBe('do_not_allow');
   });
 });
 

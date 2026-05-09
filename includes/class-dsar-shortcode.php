@@ -230,15 +230,6 @@ class DSAR_Shortcode {
 			wp_send_json_error( __( 'Submission rejected.', 'faz-cookie-manager' ) );
 		}
 
-		// Rate limiting: one submission per IP per 60 seconds.
-		// wp_cache_add is atomic on persistent object caches (Redis/Memcached);
-		// the transient provides durability across PHP workers on non-cached installs.
-		$rl_key = 'faz_dsar_rl_' . substr( $this->hash_ip(), 0, 16 );
-		if ( false !== get_transient( $rl_key ) || ! wp_cache_add( $rl_key, 1, 'faz_rate_limit', 60 ) ) {
-			wp_send_json_error( __( 'Too many requests. Please wait before submitting again.', 'faz-cookie-manager' ) );
-		}
-		set_transient( $rl_key, 1, 60 );
-
 		$name        = isset( $_POST['dsar_name'] ) ? sanitize_text_field( wp_unslash( $_POST['dsar_name'] ) ) : '';
 		$email       = isset( $_POST['dsar_email'] ) ? sanitize_email( wp_unslash( $_POST['dsar_email'] ) ) : '';
 		$type        = isset( $_POST['dsar_type'] ) ? sanitize_key( wp_unslash( $_POST['dsar_type'] ) ) : '';
@@ -270,6 +261,16 @@ class DSAR_Shortcode {
 		if ( $msg_len > self::MESSAGE_MAX_LENGTH ) {
 			wp_send_json_error( __( 'Your message is too long. Please limit it to 5,000 characters.', 'faz-cookie-manager' ) );
 		}
+
+		// Rate limiting: one submission per IP per 60 seconds — checked after all
+		// input validation so an invalid payload doesn't consume the user's token.
+		// wp_cache_add is atomic on persistent object caches (Redis/Memcached);
+		// the transient provides durability across PHP workers on non-cached installs.
+		$rl_key = 'faz_dsar_rl_' . substr( $this->hash_ip(), 0, 16 );
+		if ( false !== get_transient( $rl_key ) || ! wp_cache_add( $rl_key, 1, 'faz_rate_limit', 60 ) ) {
+			wp_send_json_error( __( 'Too many requests. Please wait before submitting again.', 'faz-cookie-manager' ) );
+		}
+		set_transient( $rl_key, 1, 60 );
 
 		$post_id = $this->store_request( $name, $email, $type, $message );
 		if ( ! $post_id ) {
