@@ -3,6 +3,16 @@
  */
 const _fazStore = window._fazConfig;
 
+if ( ! _fazStore ) {
+    // _fazConfig is injected by wp_localize_script. If it is missing (e.g. a
+    // JS-defer plugin scoped the localize block inside a DOMContentLoaded
+    // callback instead of emitting it at global scope), abort gracefully so
+    // the rest of the page continues to work.
+    console.warn( '[FAZ Cookie Manager] _fazConfig is not defined — banner disabled. If you use a JS optimisation plugin (WP Rocket, LiteSpeed, etc.), exclude _fazConfig from deferral.' );
+    // Expose a no-op stub so any external callers (GTM, etc.) do not crash.
+    window.fazcookie = window.fazcookie || {};
+} else {
+
 _fazStore._backupNodes = [];
 _fazStore._resetConsentID = false;
 _fazStore._bannerState = false;
@@ -3684,3 +3694,4 @@ document.addEventListener('click', function (event) {
     }
 }, true /* capture phase — beats the page-builder listener */);
 
+} // end: if ( _fazStore ) — null-safety guard for deferred _fazConfig

@@ -65,9 +65,9 @@ class Settings extends Store {
 				'installed' => time(),
 			),
 			'account'      => array(
-				'connected' => true,
-				'status'    => true,
-				'plan'      => 'ultimate',
+				'connected' => false,
+				'status'    => false,
+				'plan'      => '',
 			),
 			'consent_logs' => array(
 				'status'    => true,
