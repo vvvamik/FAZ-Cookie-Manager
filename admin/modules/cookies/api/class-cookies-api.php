@@ -159,12 +159,20 @@ class Cookies_API extends API_Controller {
 	/**
 	 * Get formatted item data.
 	 *
+	 * Merges the admin-only script fields back in so REST callers (which run
+	 * through the 'edit' context check in prepare_item_for_response) still
+	 * receive opt_in_script / opt_out_script. Other consumers of
+	 * Cookie::get_prepared_data() — such as the category controller — do not
+	 * see those fields, preventing accidental exposure of raw JS.
+	 *
 	 * @since  3.0.0
 	 * @param  Cookie $object Cookie instance.
 	 * @return array
 	 */
 	protected function get_formatted_item_data( $object ) {
-		return $object->get_prepared_data();
+		$data = $object->get_prepared_data();
+		$data = array_merge( $data, $object->get_script_data() );
+		return $data;
 	}
 	/**
 	 * Get the Cookies's schema, conforming to JSON Schema.
@@ -364,26 +372,22 @@ class Cookies_API extends API_Controller {
 	 *
 	 * Raw JavaScript may only be saved by users with the `unfiltered_html`
 	 * capability — equivalent to Administrators on single-site and Super Admins
-	 * on multisite. Any other role receives an empty string, preserving the
-	 * existing value in the DB (the API layer will not overwrite it).
+	 * on multisite. Any other role gets a 403 WP_Error so the request fails
+	 * explicitly instead of silently dropping the modification.
 	 *
 	 * This mirrors WordPress core's handling of unfiltered content in the REST
 	 * API (see WP_REST_Posts_Controller::sanitize_post_statuses).
 	 *
 	 * @param mixed $value Raw input value.
-	 * @return string
+	 * @return string|WP_Error
 	 */
 	public static function sanitize_script_field( $value, $request, $param ) {
 		if ( ! current_user_can( 'unfiltered_html' ) ) {
-			// User may not save arbitrary JS — return the currently-stored value
-			// so the field is preserved rather than silently cleared on save.
-			$id = absint( $request['id'] );
-			if ( $id ) {
-				$cookie = new Cookie( $id );
-				$meta   = $cookie->get_meta();
-				return isset( $meta[ $param ] ) ? (string) $meta[ $param ] : '';
-			}
-			return '';
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'You do not have permission to modify script fields.', 'faz-cookie-manager' ),
+				array( 'status' => 403 )
+			);
 		}
 		return (string) $value;
 	}

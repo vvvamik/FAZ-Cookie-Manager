@@ -18,6 +18,7 @@
 		var notice = wrap.querySelector('.faz-dnsmpi-notice');
 		var btn = form.querySelector('button');
 		if (btn) btn.disabled = true;
+		if (btn) btn.setAttribute('aria-busy', 'true');
 
 		var data = new FormData(form);
 		fetch(fazDnsmpiConfig.ajaxUrl, {
@@ -27,23 +28,28 @@
 		})
 			.then(function (r) { return r.json(); })
 			.then(function (res) {
-				form.style.display = 'none';
 				if (notice) {
 					notice.style.display = 'block';
 					if (res.success) {
 						notice.className = 'faz-dnsmpi-notice success';
 						notice.textContent =
 							res.data && res.data.message ? res.data.message : fazDnsmpiConfig.successMsg;
+						form.style.display = 'none';
+						notice.tabIndex = -1;
+						notice.focus();
 					} else {
 						notice.className = 'faz-dnsmpi-notice error';
 						notice.textContent = res.data || fazDnsmpiConfig.errMsg;
 						form.style.display = 'block';
 						if (btn) btn.disabled = false;
+						if (btn) btn.setAttribute('aria-busy', 'false');
 					}
 				}
 			})
 			.catch(function () {
 				if (btn) btn.disabled = false;
+				if (btn) btn.setAttribute('aria-busy', 'false');
+				form.style.display = 'block';
 				if (notice) {
 					notice.className = 'faz-dnsmpi-notice error';
 					notice.textContent = fazDnsmpiConfig.netMsg;

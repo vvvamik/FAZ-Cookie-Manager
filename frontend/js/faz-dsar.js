@@ -33,10 +33,24 @@
 		var email   = emailEl ? emailEl.value.trim() : '';
 		var type    = typeEl  ? typeEl.value         : '';
 
-		if (!name || !email || !type) {
+		var missing = [];
+		if (!name)  { missing.push('Name'); }
+		if (!email) { missing.push('Email'); }
+		if (!type)  { missing.push('Request type'); }
+		if (missing.length) {
 			if (notice) {
 				notice.className     = 'faz-dsar-notice error';
-				notice.textContent   = reqMsg;
+				notice.textContent   = reqMsg + ' Missing: ' + missing.join(', ') + '.';
+				notice.style.display = 'block';
+			}
+			return;
+		}
+
+		var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		if (!emailPattern.test(email)) {
+			if (notice) {
+				notice.className     = 'faz-dsar-notice error';
+				notice.textContent   = config.emailMsg || 'Please enter a valid email address.';
 				notice.style.display = 'block';
 			}
 			return;

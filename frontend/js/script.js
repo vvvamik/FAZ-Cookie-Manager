@@ -2315,7 +2315,7 @@ function _fazShouldChangeType(element, src) {
 /**
  * Network-level consent enforcement.
  *
- * Wraps navigator.sendBeacon, fetch, and XMLHttpRequest.open to block
+ * Wraps navigator.sendBeacon, fetch, XMLHttpRequest.open, and WebSocket to block
  * requests to known tracking endpoints when consent has not been given.
  * This is a defense-in-depth layer: even scripts that loaded before
  * the consent plugin can be prevented from phoning home.

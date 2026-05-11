@@ -256,7 +256,7 @@ class DSAR_Shortcode {
 		// Per-email rate limit: one submission per email per hour.
 		$email_rl_key = 'faz_dsar_rl_em_' . substr( hash_hmac( 'sha256', strtolower( $email ), wp_salt() ), 0, 16 );
 		if ( false !== get_transient( $email_rl_key ) ) {
-			wp_send_json_error( __( 'Too many requests. Please wait before submitting again.', 'faz-cookie-manager' ) );
+			wp_send_json_error( __( 'Too many requests. Please wait 1 minute before submitting again.', 'faz-cookie-manager' ) );
 		}
 
 		if ( ! in_array( $type, $valid_types, true ) ) {
@@ -276,7 +276,7 @@ class DSAR_Shortcode {
 		$lock_key = 'faz_dsar_lock_' . substr( $this->hash_ip(), 0, 16 );
 
 		if ( false !== get_transient( $rl_key ) || ! add_option( $lock_key, 1, '', 'no' ) ) {
-			wp_send_json_error( __( 'Too many requests. Please wait before submitting again.', 'faz-cookie-manager' ) );
+			wp_send_json_error( __( 'Too many requests. Please wait 1 minute before submitting again.', 'faz-cookie-manager' ) );
 			return;
 		}
 		// Lock acquired — write durability transient, then process and release.
@@ -394,7 +394,7 @@ class DSAR_Shortcode {
 			/* translators: 1: site name, 2: request type */
 			sprintf( __( '[%1$s] Data Subject Request: %2$s', 'faz-cookie-manager' ), $site_name, $type_label ),
 			$body,
-			array( 'Reply-To: ' . $safe_name . ' <' . $safe_email . '>' )
+			array( 'Reply-To: "' . $safe_name . '" <' . $safe_email . '>' )
 		);
 	}
 

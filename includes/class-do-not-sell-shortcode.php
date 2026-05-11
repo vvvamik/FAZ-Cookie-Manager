@@ -113,7 +113,7 @@ class Do_Not_Sell_Shortcode {
 					<?php esc_html_e( 'You have already submitted an opt-out request. We will not sell your personal information.', 'faz-cookie-manager' ); ?>
 				</div>
 			<?php else : ?>
-				<p><?php esc_html_e( 'As a California resident you have the right to opt out of the sale of your personal information. Submit the form below to exercise this right.', 'faz-cookie-manager' ); ?></p>
+				<p><?php esc_html_e( 'As a US resident in a state with applicable privacy laws, you have the right to opt out of the sale of your personal information. Submit the form below to exercise this right.', 'faz-cookie-manager' ); ?></p>
 				<form class="faz-dnsmpi-form">
 					<input type="hidden" name="action" value="<?php echo esc_attr( self::AJAX_ACTION ); ?>">
 					<input type="hidden" name="nonce"  value="<?php echo esc_attr( $nonce ); ?>">
@@ -132,6 +132,7 @@ class Do_Not_Sell_Shortcode {
 	public function handle_optout() {
 		if ( ! check_ajax_referer( self::AJAX_ACTION, 'nonce', false ) ) {
 			wp_send_json_error( __( 'Invalid security token. Please refresh the page and try again.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		// Idempotency: if the browser already carries the opt-out cookie, skip
@@ -140,6 +141,7 @@ class Do_Not_Sell_Shortcode {
 			wp_send_json_success(
 				array( 'message' => __( 'You have already opted out. We will not sell your personal information.', 'faz-cookie-manager' ) )
 			);
+			return;
 		}
 
 		// Rate limiting: atomic DB-backed lock via add_option (MySQL INSERT IGNORE),
@@ -148,7 +150,7 @@ class Do_Not_Sell_Shortcode {
 		$lock_key = 'faz_dnsmpi_lock_' . substr( $this->hash_ip(), 0, 16 );
 
 		if ( false !== get_transient( $rl_key ) || ! add_option( $lock_key, 1, '', 'no' ) ) {
-			wp_send_json_error( __( 'Too many requests. Please wait before submitting again.', 'faz-cookie-manager' ) );
+			wp_send_json_error( __( 'Too many requests. Please wait 1 minute before submitting again.', 'faz-cookie-manager' ) );
 			return;
 		}
 		// Lock acquired — write durability transient, then process and release.

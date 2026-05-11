@@ -133,22 +133,41 @@ class Cookie extends Store {
 	/**
 	 * Get an array of data required for APIs.
 	 *
+	 * Note: Script fields (opt_in_script, opt_out_script) are intentionally
+	 * excluded here because they are admin-only and only valid in the REST
+	 * 'edit' context. Use get_script_data() to retrieve them, and merge the
+	 * result in REST callers that should expose the scripts.
+	 *
 	 * @return array
 	 */
 	public function get_prepared_data() {
 		return array(
-			'id'             => $this->get_id(),
-			'name'           => $this->get_name(),
-			'slug'           => $this->get_slug(),
-			'description'    => $this->get_description(),
-			'duration'       => $this->get_duration(),
-			'type'           => $this->get_type(),
-			'domain'         => $this->get_domain(),
-			'discovered'     => $this->is_discovered(),
-			'url_pattern'    => $this->get_url_pattern(),
-			'category'       => $this->get_category(),
-			'date_created'   => $this->get_date_created(),
-			'date_modified'  => $this->get_date_modified(),
+			'id'            => $this->get_id(),
+			'name'          => $this->get_name(),
+			'slug'          => $this->get_slug(),
+			'description'   => $this->get_description(),
+			'duration'      => $this->get_duration(),
+			'type'          => $this->get_type(),
+			'domain'        => $this->get_domain(),
+			'discovered'    => $this->is_discovered(),
+			'url_pattern'   => $this->get_url_pattern(),
+			'category'      => $this->get_category(),
+			'date_created'  => $this->get_date_created(),
+			'date_modified' => $this->get_date_modified(),
+		);
+	}
+
+	/**
+	 * Get the admin-only script fields for this cookie.
+	 *
+	 * These fields are kept separate from get_prepared_data() so that callers
+	 * which do not run inside the REST 'edit' context (and therefore must not
+	 * leak raw JS) do not receive them by default.
+	 *
+	 * @return array
+	 */
+	public function get_script_data() {
+		return array(
 			'opt_in_script'  => $this->get_opt_in_script(),
 			'opt_out_script' => $this->get_opt_out_script(),
 		);
