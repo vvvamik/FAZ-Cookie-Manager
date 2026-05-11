@@ -263,7 +263,7 @@ class Cookie_Controller extends Base_Controller {
 		);
 		$object->set_id( $wpdb->insert_id );
 		$this->delete_cache();
-		do_action( 'faz_after_update_cookie' );
+		do_action( 'faz_after_create_cookie' );
 	}
 
 	/**
@@ -328,7 +328,7 @@ class Cookie_Controller extends Base_Controller {
 			array( '%d' )
 		);
 		$this->delete_cache();
-		do_action( 'faz_after_update_cookie' );
+		do_action( 'faz_after_delete_cookie' );
 	}
 
 	/**

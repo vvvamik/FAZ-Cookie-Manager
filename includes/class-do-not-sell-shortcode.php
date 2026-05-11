@@ -119,7 +119,7 @@ class Do_Not_Sell_Shortcode {
 					<input type="hidden" name="nonce"  value="<?php echo esc_attr( $nonce ); ?>">
 					<button type="submit" class="faz-dnsmpi-btn"><?php echo esc_html( $atts['button'] ); ?></button>
 				</form>
-				<div class="faz-dnsmpi-notice" style="display:none;"></div>
+				<div class="faz-dnsmpi-notice" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
 			<?php endif; ?>
 		</div>
 		<?php

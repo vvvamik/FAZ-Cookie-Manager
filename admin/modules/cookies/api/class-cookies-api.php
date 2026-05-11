@@ -335,7 +335,7 @@ class Cookies_API extends API_Controller {
 				$deleted++;
 			}
 		}
-		do_action( 'faz_after_update_cookie' );
+		do_action( 'faz_after_delete_cookie' );
 		return rest_ensure_response( array( 'deleted' => $deleted ) );
 	}
 

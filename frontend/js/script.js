@@ -865,12 +865,22 @@ function _fazGetBanner() {
 }
 function _fazHideBanner() {
     const notice = _fazGetBanner();
-    notice && notice.classList.add('faz-hide');
+    if (notice) {
+        const focusWasInside = notice.contains(document.activeElement);
+        notice.classList.add('faz-hide');
+        if (focusWasInside && _fazStore._bannerTriggerElement) {
+            _fazStore._bannerTriggerElement.focus();
+            _fazStore._bannerTriggerElement = null;
+        }
+    }
 }
 var _fazBannerLoadedFired = false;
 function _fazShowBanner() {
     const notice = _fazGetBanner();
     if (notice) {
+        if (!_fazStore._bannerTriggerElement) {
+            _fazStore._bannerTriggerElement = document.activeElement || document.body;
+        }
         notice.classList.remove('faz-hide');
         if (!_fazBannerLoadedFired) {
             _fazBannerLoadedFired = true;
@@ -1410,7 +1420,7 @@ function _fazShowAgeGate(pendingChoice) {
  * Accept or reject the consent based on the option.
  *
  * @param {string} option Type of consent.
- * @returns {void}
+ * @returns {function} Event handler closure that processes the consent action.
  */
 function _fazAcceptReject(option = "custom") {
     return () => {
