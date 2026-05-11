@@ -473,18 +473,23 @@ test.describe('[faz_dsar_form] GDPR DSAR form', () => {
   });
 
   test('DSAR-20: server rejects invalid email address format', async ({ page }) => {
+    // Load the page to obtain a fresh nonce. Client-side JS (F028) now validates
+    // email format before any fetch, so we bypass the form handler entirely and
+    // POST directly to admin-ajax.php — this tests the server-side is_email()
+    // check independently of client-side validation.
     await page.goto(dsarUrl, { waitUntil: 'domcontentloaded' });
-    await page.locator('input[name="dsar_email"]').evaluate((el: HTMLInputElement) => {
-      el.removeAttribute('type');
+    const nonce = await page.locator('input[name="nonce"]').inputValue();
+    const res = await page.request.post(`${WP_BASE}/wp-admin/admin-ajax.php`, {
+      form: {
+        action:       'faz_dsar_submit',
+        nonce,
+        dsar_name:    'Bad Email User',
+        dsar_email:   'not-an-email',
+        dsar_type:    'access',
+        dsar_message: '',
+      },
     });
-    await page.locator('input[name="dsar_name"]').fill('Bad Email User');
-    await page.locator('input[name="dsar_email"]').fill('not-an-email');
-    await page.locator('select[name="dsar_type"]').selectOption('access');
-    const [response] = await Promise.all([
-      page.waitForResponse('**/admin-ajax.php'),
-      page.locator('button.faz-dsar-btn').click(),
-    ]);
-    const json = await response.json() as { success: boolean };
+    const json = await res.json() as { success: boolean };
     expect(json.success).toBe(false);
   });
 
