@@ -273,6 +273,29 @@ class Frontend {
 			}
 
 			wp_localize_script( $script_handle, '_fazConfig', $this->get_store_data() );
+
+			// Pre-initialise window.dataLayer so third-party trackers that emit
+			// `dataLayer.push(…)` bare (without the GTM bootstrap that
+			// historically initialises `var dataLayer = dataLayer || []`) do
+			// not throw `ReferenceError: dataLayer is not defined` when the
+			// plugin blocks the GTM bootstrap as a tracker.
+			//
+			// Reported by a publisher on citationstyler.com (LiteSpeed Cache +
+			// gtm4wp): the GTM4WP bootstrap script carries `data-faz-category=
+			// "analytics"` and is held in `type="text/plain"`, so its
+			// `dataLayer = dataLayer || []` never runs; a downstream gtm4wp
+			// push that lacks the blocking attributes still tries
+			// `dataLayer.push(...)` and crashes.
+			//
+			// Emitting this as a `before` inline keeps it ahead of the
+			// localised `_fazConfig` blob *and* the main `<script src="…">`
+			// tag, so by the time WP renders any later inline tag on the page
+			// `window.dataLayer` is already an array.
+			wp_add_inline_script(
+				$script_handle,
+				'window.dataLayer = window.dataLayer || [];',
+				'before'
+			);
 			// Inject template CSS as a proper inline style (nonce-compatible; no unsafe-inline needed).
 			// Utility rules appended AFTER boost_css_specificity() so they are NOT
 			// scoped inside #faz-consent — these classes are used on elements outside
@@ -1806,9 +1829,20 @@ class Frontend {
 		// wp_localize_script suffix added automatically by WP core).
 		$tokens        = preg_split( '/\s+/', strtolower( $value ), -1, PREG_SPLIT_NO_EMPTY );
 		$lower_pattern = strtolower( $pattern );
+		$is_prefix     = preg_match( '/[-_]$/', $lower_pattern );
+
 		foreach ( $tokens as $token ) {
-			if ( $token === $lower_pattern || 0 === strpos( $token, $lower_pattern . '-' ) ) {
+			if ( $token === $lower_pattern ) {
 				return true;
+			}
+			if ( $is_prefix ) {
+				if ( 0 === strpos( $token, $lower_pattern ) ) {
+					return true;
+				}
+			} else {
+				if ( 0 === strpos( $token, $lower_pattern . '-' ) || 0 === strpos( $token, $lower_pattern . '_' ) ) {
+					return true;
+				}
 			}
 		}
 		return false;

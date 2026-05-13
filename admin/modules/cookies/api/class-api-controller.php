@@ -58,7 +58,7 @@ abstract class API_Controller extends Rest_Controller {
 	 * Get formatted data from corresponding object.
 	 *
 	 * @param object $object Cookie_Categories or Cookie instance.
-	 * @return WP_Error
+	 * @return array
 	 */
 	protected function get_formatted_item_data( $object ) {
 		// translators: %s: Class method name.

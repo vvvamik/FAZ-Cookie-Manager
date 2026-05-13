@@ -43,6 +43,40 @@ class DSAR_Shortcode {
 		// Inline <script> tags injected via innerHTML are silently ignored by
 		// browsers, so the handler must live in a separately-enqueued file.
 		add_action( 'wp_enqueue_scripts', array( $this, 'maybe_enqueue_assets' ) );
+		add_action( 'faz_after_activate', array( $this, 'assign_capabilities' ) );
+	}
+
+	/**
+	 * Grant custom DSAR capabilities to the administrator role.
+	 *
+	 * Hooked to faz_after_activate so it runs on initial activation
+	 * and every version bump.
+	 */
+	public function assign_capabilities() {
+		$role = get_role( 'administrator' );
+		if ( ! $role ) {
+			return;
+		}
+
+		$caps = array(
+			'edit_faz_dsar',
+			'read_faz_dsar',
+			'delete_faz_dsar',
+			'edit_faz_dsars',
+			'edit_others_faz_dsars',
+			'publish_faz_dsars',
+			'read_private_faz_dsars',
+			'delete_faz_dsars',
+			'delete_private_faz_dsars',
+			'delete_published_faz_dsars',
+			'delete_others_faz_dsars',
+			'edit_private_faz_dsars',
+			'edit_published_faz_dsars',
+		);
+
+		foreach ( $caps as $cap ) {
+			$role->add_cap( $cap );
+		}
 	}
 
 	/**
@@ -107,37 +141,12 @@ class DSAR_Shortcode {
 				'public'          => false,
 				'show_ui'         => true,
 				'show_in_menu'    => false,
-				// Map all capabilities to manage_options so Editors (who have
-				// read_private_posts by default) cannot access DSAR records
-				// which contain personal data (name, email, request type).
-				'capability_type' => 'post',
-				'capabilities'    => array(
-					'edit_post'          => 'manage_options',
-					'read_post'          => 'manage_options',
-					'delete_post'        => 'manage_options',
-					'edit_posts'         => 'manage_options',
-					'edit_others_posts'  => 'manage_options',
-					'edit_private_posts' => 'manage_options',
-					'delete_posts'       => 'manage_options',
-					'publish_posts'      => 'manage_options',
-					'read_private_posts' => 'manage_options',
-					'create_posts'       => 'do_not_allow',
-				),
+				'capability_type' => 'faz_dsar',
 				'map_meta_cap'    => true,
 				'supports'        => array( 'title', 'custom-fields' ),
 				'show_in_rest'    => false,
 			)
 		);
-
-		// Mapping singular post capabilities (edit_post, delete_post, read_post) to
-		// 'manage_options' with map_meta_cap => true causes WordPress to register
-		// 'manage_options' in the global $post_type_meta_caps table. This makes
-		// map_meta_cap() treat 'manage_options' as a meta-cap that requires a post ID,
-		// returning 'do_not_allow' when no ID is supplied — breaking all admin pages
-		// that check current_user_can('manage_options'). Remove the entry to restore
-		// 'manage_options' as a primitive capability.
-		global $post_type_meta_caps;
-		unset( $post_type_meta_caps['manage_options'] );
 	}
 
 	/**
@@ -187,7 +196,12 @@ class DSAR_Shortcode {
 		ob_start();
 		?>
 		<div class="faz-dsar-wrap" id="<?php echo esc_attr( $id ); ?>">
-			<form class="faz-dsar-form" novalidate>
+			<form
+				class="faz-dsar-form"
+				method="post"
+				action="<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>"
+				novalidate
+			>
 				<input type="hidden" name="action" value="<?php echo esc_attr( self::AJAX_ACTION ); ?>">
 				<input type="hidden" name="nonce"  value="<?php echo esc_attr( $nonce ); ?>">
 

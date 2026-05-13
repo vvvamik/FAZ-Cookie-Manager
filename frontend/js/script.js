@@ -3540,11 +3540,13 @@ window._fazAcceptCategory = function (categorySlug) {
         }
     }
     var categorySlugToRollback = null;
+    var previousCategoryValue = "";
     for (const cat of _fazStore._categories) {
         if (cat.slug === categorySlug && !cat.isNecessary) {
             matched = true;
             categorySlugToRollback = cat.slug;
-            ref._fazSetInStore(cat.slug, "yes");
+            previousCategoryValue = ref._fazGetFromStore(cat.slug);
+            ref._fazConsentStore.set(cat.slug, "yes");
             // Sync checkbox so _fazAcceptCookies("custom") reads the correct state.
             var cb = document.getElementById("fazSwitch" + cat.slug);
             if (cb) cb.checked = true;
@@ -3563,13 +3565,13 @@ window._fazAcceptCategory = function (categorySlug) {
     if (_fazAcceptCookies("custom") === false) {
         // Age gate blocked the accept — rollback store and UI to original state.
         if (categorySlugToRollback) {
-            ref._fazSetInStore(categorySlugToRollback, "no");
+            ref._fazConsentStore.set(categorySlugToRollback, previousCategoryValue);
             var cbR = document.getElementById("fazSwitch" + categorySlugToRollback);
-            if (cbR) cbR.checked = false;
+            if (cbR) cbR.checked = previousCategoryValue === "yes";
             var cbDirectR = document.getElementById("fazCategoryDirect" + categorySlugToRollback);
-            if (cbDirectR) cbDirectR.checked = false;
+            if (cbDirectR) cbDirectR.checked = previousCategoryValue === "yes";
             document.querySelectorAll('.faz-service-toggle[data-category="' + categorySlugToRollback + '"]')
-                .forEach(function(svcToggle) { svcToggle.checked = false; });
+                .forEach(function(svcToggle) { svcToggle.checked = previousCategoryValue === "yes"; });
         }
         _fazCategoriesBeforeConsent = null;
         return;
