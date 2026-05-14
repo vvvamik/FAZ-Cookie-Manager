@@ -1639,7 +1639,18 @@
 
 	/* ── Custom Blocking Rules ────────────────────────── */
 
-	var ruleCategories = ['analytics', 'marketing', 'functional', 'performance'];
+	// Must match the allowlist in class-settings.php::sanitize_settings()
+	// case 'custom_rules' (admin/modules/settings/includes/class-settings.php:386).
+	// `necessary` is required by 8 built-in blocker templates (Cloudflare
+	// Turnstile, Gravatar, reCAPTCHA, hCaptcha, Wordfence, WPForms, Ninja
+	// Forms reCAPTCHA, WooCommerce Attribution) — these scripts must load
+	// unconditionally regardless of consent state and the auto-scanner must
+	// leave them alone. Without `necessary` here the dropdown silently
+	// refused to expose the option even though the backend accepted it,
+	// forcing admins into the lossy workaround of re-deleting GTM/Turnstile
+	// rows after every re-scan. `uncategorized` is the fallback bucket; it
+	// is accepted by the backend but rarely a useful choice for a rule.
+	var ruleCategories = ['necessary', 'analytics', 'marketing', 'functional', 'performance'];
 
 	function loadCustomRules() {
 		FAZ.get('settings').then(function (data) {
