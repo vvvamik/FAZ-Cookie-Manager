@@ -1441,6 +1441,11 @@ function _fazActionClose() {
  * Consent accept callback.
  *
  * @param {string} choice  Type of consent.
+ * @returns {false|undefined} Returns false when the age-gate intercepts the
+ *   action (visitor under the configured minimum age); otherwise returns
+ *   undefined. Callers such as _fazAcceptReject() and window._fazAcceptCategory
+ *   check `=== false` to short-circuit downstream state changes when the gate
+ *   fires.
  */
 function _fazAcceptCookies(choice = "all") {
     // Age gate check (GDPR Art. 8): only on accept/partial, never on reject.
@@ -2862,7 +2867,12 @@ function _fazExecuteConsentScripts(prevAccepted) {
 /**
  * Execute a single admin-defined script by injecting a <script> element.
  * This is the same pattern used by WordPress Custom HTML blocks and many
- * consent plugins. Only admin-authored code (manage_options) reaches here.
+ * consent plugins. Only admin-authored code (gated by the unfiltered_html
+ * capability — not manage_options; multisite site-admins lack
+ * unfiltered_html by default and are intentionally excluded) reaches here:
+ * Cookies_API::sanitize_script_field and sanitize_meta_for_current_user
+ * both check current_user_can('unfiltered_html') before persisting any
+ * opt_in_script / opt_out_script value.
  *
  * @param {string} code JavaScript source string.
  */

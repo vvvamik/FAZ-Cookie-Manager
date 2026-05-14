@@ -33,6 +33,18 @@
 		var isOptout  = form.classList && form.classList.contains('faz-dnsmpi-form');
 		var isRescind = form.classList && form.classList.contains('faz-dnsmpi-rescind-form');
 		if (!isOptout && !isRescind) return;
+
+		// Per-form sentinel guards against double-fire: if the script is
+		// enqueued twice (e.g. an AJAX-loaded widget brings a second copy of
+		// the asset) the document-level submit listener also fires twice for
+		// the same submit, and the second fetch() trips the per-IP add_option
+		// lock — the user sees "Too many requests" after having successfully
+		// opted out on the first request. Mirrors faz-dsar.js:_fazDsarAttached.
+		if (form._fazDnsmpiAttached) {
+			e.preventDefault();
+			return;
+		}
+		form._fazDnsmpiAttached = true;
 		e.preventDefault();
 
 		var wrap = form.parentElement;
@@ -42,15 +54,31 @@
 		if (btn) btn.disabled = true;
 		if (btn) btn.setAttribute('aria-busy', 'true');
 
+		// On every error path below we'll release the sentinel so the user
+		// can retry after fixing whatever was wrong (network drop, server
+		// error, validation rejection). Success path leaves it true — the
+		// form is hidden anyway and any subsequent submit would be on stale
+		// state.
+		function releaseSentinel() { form._fazDnsmpiAttached = false; }
+
 		var config = getConfig();
 		if (!config.ajaxUrl) {
 			if (btn) btn.disabled = false;
 			if (btn) btn.setAttribute('aria-busy', 'false');
 			if (notice) {
+				// Switch the live-region to role=alert so screen readers
+				// announce the error assertively (the static markup ships with
+				// role=status / aria-live=polite, which queues behind the
+				// current utterance and may be missed entirely on a submit
+				// that errored out immediately). Mirrors setNoticeError() in
+				// faz-dsar.js.
+				notice.setAttribute('role', 'alert');
+				notice.setAttribute('aria-live', 'assertive');
 				notice.className = 'faz-dnsmpi-notice error';
 				notice.textContent = normalizeMessage('', config.errMsg);
 				notice.style.display = 'block';
 			}
+			releaseSentinel();
 			return;
 		}
 
@@ -69,6 +97,10 @@
 				if (notice) {
 					notice.style.display = 'block';
 					if (res.success) {
+						// Success: reset to role=status (polite) so the
+						// confirmation doesn't bark in user's ears.
+						notice.setAttribute('role', 'status');
+						notice.setAttribute('aria-live', 'polite');
 						notice.className = 'faz-dnsmpi-notice success';
 						notice.textContent = normalizeMessage(res.data, successFallback);
 						form.style.display = 'none';
@@ -81,11 +113,15 @@
 							setTimeout(function () { window.location.reload(); }, 800);
 						}
 					} else {
+						// Failure: assertive announcement.
+						notice.setAttribute('role', 'alert');
+						notice.setAttribute('aria-live', 'assertive');
 						notice.className = 'faz-dnsmpi-notice error';
 						notice.textContent = normalizeMessage(res.data, config.errMsg);
 						form.style.display = 'block';
 						if (btn) btn.disabled = false;
 						if (btn) btn.setAttribute('aria-busy', 'false');
+						releaseSentinel();
 					}
 				}
 			})
@@ -94,10 +130,13 @@
 				if (btn) btn.setAttribute('aria-busy', 'false');
 				form.style.display = 'block';
 				if (notice) {
+					notice.setAttribute('role', 'alert');
+					notice.setAttribute('aria-live', 'assertive');
 					notice.className = 'faz-dnsmpi-notice error';
 					notice.textContent = normalizeMessage('', getConfig().netMsg);
 					notice.style.display = 'block';
 				}
+				releaseSentinel();
 			});
 	}
 

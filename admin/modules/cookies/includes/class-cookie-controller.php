@@ -219,10 +219,10 @@ class Cookie_Controller extends Base_Controller {
 	}
 
 	/**
-	 * Create a new category
+	 * Create a new cookie record (inserts into wp_faz_cookies).
 	 *
-	 * @param object $object Category object.
-	 * @return void|false
+	 * @param object $object Cookie object.
+	 * @return void|false False on DB-write failure; void on success.
 	 */
 	public function create_item( $object ) {
 		global $wpdb;

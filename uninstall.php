@@ -97,12 +97,17 @@ if ( $faz_force_remove_all || faz_should_remove_on_uninstall() || is_multisite()
 
 			// Delete DSAR request posts — they contain personal data (name, email, request
 			// type) and must be erased on uninstall to honour GDPR Article 17.
+			// Enumerate every status WordPress recognises (including auto-draft and
+			// inherit) because get_post_stati() returns them all and DSAR records
+			// must not survive uninstall regardless of state.
+			// Note: 'any' is a magic sentinel for get_posts() that only works when
+			// post_status is a scalar string — inside an array it is interpreted as
+			// a literal status name and matches nothing. Listing explicit statuses
+			// is the correct shape.
 			$dsar_posts = get_posts(
 				array(
 					'post_type'      => 'faz_dsar',
-					// Include 'trash': get_posts with 'any' excludes trashed posts
-					// (WP docs: "any" means "all statuses except trash and auto-draft").
-					'post_status'    => array( 'private', 'publish', 'pending', 'draft', 'trash', 'any' ),
+					'post_status'    => array( 'private', 'publish', 'pending', 'draft', 'trash', 'auto-draft', 'inherit', 'future' ),
 					'posts_per_page' => -1,
 					'fields'         => 'ids',
 				)
@@ -152,11 +157,18 @@ if ( $faz_force_remove_all || faz_should_remove_on_uninstall() || is_multisite()
 
 			// Clean up Do Not Sell / DSAR atomic lock options (created by add_option,
 			// not set_transient, so the _transient_faz% LIKE above misses them).
+			// Includes the rescind-lock variant (faz_dnsmpi_rsc_lock_*) — the opt-out
+			// and rescind paths in Do_Not_Sell_Shortcode use distinct lock-key prefixes
+			// (handle_optout uses faz_dnsmpi_lock_, handle_rescind uses faz_dnsmpi_rsc_lock_).
+			// Without the third pattern a request that crashed between add_option (line
+			// 212 of class-do-not-sell-shortcode.php) and delete_option (line 225) leaves
+			// orphan locks behind on uninstall.
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
 			$faz_lock_keys = $wpdb->get_col(
 				$wpdb->prepare(
-					"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+					"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
 					$wpdb->esc_like( 'faz_dnsmpi_lock_' ) . '%',
+					$wpdb->esc_like( 'faz_dnsmpi_rsc_lock_' ) . '%',
 					$wpdb->esc_like( 'faz_dsar_lock_' ) . '%'
 				)
 			);

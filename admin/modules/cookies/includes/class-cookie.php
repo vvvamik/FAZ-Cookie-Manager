@@ -318,18 +318,27 @@ class Cookie extends Store {
 	/**
 	 * Set the opt-in script, merging into the existing meta JSON.
 	 *
+	 * Routes through set_meta() so the
+	 * sanitize_meta_for_current_user capability gate (unfiltered_html
+	 * required) applies on this write path too — set_meta is documented as
+	 * the single source of truth for every wp_faz_cookies.meta write, and
+	 * this setter must honour that invariant rather than reach for
+	 * set_object_data directly.
+	 *
 	 * @param string $script JavaScript to execute when this cookie's category is accepted.
 	 * @return void
 	 */
 	public function set_opt_in_script( $script ) {
 		$meta                   = $this->get_meta();
 		$meta['opt_in_script']  = (string) $script;
-		$this->set_object_data( 'meta', wp_json_encode( $meta ) );
-		$this->decoded_meta = null;
+		$this->set_meta( $meta );
 	}
 
 	/**
 	 * Set the opt-out script, merging into the existing meta JSON.
+	 *
+	 * Routes through set_meta() — same rationale as set_opt_in_script
+	 * above.
 	 *
 	 * @param string $script JavaScript to execute when this cookie's category is rejected or revoked.
 	 * @return void
@@ -337,8 +346,7 @@ class Cookie extends Store {
 	public function set_opt_out_script( $script ) {
 		$meta                    = $this->get_meta();
 		$meta['opt_out_script']  = (string) $script;
-		$this->set_object_data( 'meta', wp_json_encode( $meta ) );
-		$this->decoded_meta = null;
+		$this->set_meta( $meta );
 	}
 
 	/**

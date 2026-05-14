@@ -606,7 +606,12 @@
 			group.appendChild(input);
 			if (f.path === 'opt_in_script' || f.path === 'opt_out_script') {
 				var scriptNotice = document.createElement('p');
-				scriptNotice.style.cssText = 'font-size:11px;color:#888;margin:4px 0 0;';
+				// #767676 is the minimum WCAG-AA-passing gray on white (4.5:1
+				// contrast); #888 used previously was 3.54:1 and failed AA.
+				// font-size pulled up from 11px to 12px to give the helper
+				// text some breathing room without breaking the compact form
+				// layout.
+				scriptNotice.style.cssText = 'font-size:12px;color:#767676;margin:4px 0 0;';
 				scriptNotice.textContent = __('cookies.scriptNotice', 'Note: code entered here is included in the page source and visible to all visitors.');
 				group.appendChild(scriptNotice);
 			}

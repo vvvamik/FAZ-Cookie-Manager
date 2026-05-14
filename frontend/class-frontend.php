@@ -199,7 +199,11 @@ class Frontend {
 
 		// Invalidate the cookie-scripts transient whenever a cookie or category is
 		// saved or deleted. Category changes affect slug lookups in _cookieScripts,
-		// so a rename / delete must also clear the map.
+		// so a rename / delete must also clear the map. faz_after_update_settings
+		// and faz_clear_cache are added here for symmetry with the banner-template
+		// cache invalidation in class-template.php: disabling a category via the
+		// Settings UI (or any other settings change that affects the category list)
+		// would otherwise leave the cookie-scripts map stale for up to 12 hours.
 		$invalidate_scripts_map = function() {
 			delete_transient( 'faz_cookie_scripts_map' );
 		};
@@ -208,6 +212,8 @@ class Frontend {
 		add_action( 'faz_after_delete_cookie', $invalidate_scripts_map );
 		add_action( 'faz_after_update_cookie_category', $invalidate_scripts_map );
 		add_action( 'faz_after_delete_cookie_category', $invalidate_scripts_map );
+		add_action( 'faz_after_update_settings', $invalidate_scripts_map );
+		add_action( 'faz_clear_cache', $invalidate_scripts_map );
 	}
 
 	/**
@@ -287,10 +293,15 @@ class Frontend {
 			// push that lacks the blocking attributes still tries
 			// `dataLayer.push(...)` and crashes.
 			//
-			// Emitting this as a `before` inline keeps it ahead of the
-			// localised `_fazConfig` blob *and* the main `<script src="…">`
-			// tag, so by the time WP renders any later inline tag on the page
-			// `window.dataLayer` is already an array.
+			// WP_Scripts emits this inline in the "before" bucket, which
+			// renders AFTER the wp_localize_script "data" bucket (where the
+			// `_fazConfig` blob lives) but BEFORE the main `<script src="…">`
+			// tag. The dataLayer initialiser therefore runs after _fazConfig
+			// is on the page, but ahead of any later inline tags and the
+			// page-level body content where third-party trackers fire — which
+			// is all we need: only the trackers that emit bare `dataLayer.push`
+			// require this guard, and they always render after this point in
+			// the document order.
 			wp_add_inline_script(
 				$script_handle,
 				'window.dataLayer = window.dataLayer || [];',

@@ -18,9 +18,15 @@ const SLUG = 'faz-e2e-dnsmpi-ux';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function clearRateLimit(): void {
+  // Clean every rate-limit / atomic-lock option produced by both the
+  // opt-out path (handle_optout: faz_dnsmpi_lock_*) and the rescind path
+  // (handle_rescind: faz_dnsmpi_rsc_lock_* + faz_dnsmpi_rsc_rl_*). Without
+  // the rescind keys, a rescind in test N can throttle the rescind path in
+  // test N+1 with "Too many requests" and produce non-deterministic CI
+  // failures whenever two rescind-touching specs run back-to-back.
   wpEval(`
     global $wpdb;
-    $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_faz_dnsmpi_%' OR option_name LIKE 'faz_dnsmpi_lock_%'" );
+    $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_faz_dnsmpi_%' OR option_name LIKE '_transient_faz_dnsmpi_rsc_%' OR option_name LIKE 'faz_dnsmpi_lock_%' OR option_name LIKE 'faz_dnsmpi_rsc_lock_%' OR option_name LIKE 'faz_dnsmpi_rsc_rl_%'" );
   `);
 }
 

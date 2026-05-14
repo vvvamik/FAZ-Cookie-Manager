@@ -194,6 +194,8 @@ class DSAR_Shortcode {
 .faz-dsar-notice { padding: 12px 16px; border-radius: 6px; margin-top: 12px; }
 .faz-dsar-notice.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
 .faz-dsar-notice.error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.faz-dsar-wrap .faz-field-error { display: block; color: #721c24; font-size: 0.85em; margin-top: 3px; font-weight: 500; }
+.faz-dsar-required-note { font-size: 13px; color: #545454; margin: 0 0 12px; }
 .faz-dsar-honeypot { display: none !important; }
 		' );
 
@@ -212,6 +214,7 @@ class DSAR_Shortcode {
 		ob_start();
 		?>
 		<div class="faz-dsar-wrap" id="<?php echo esc_attr( $id ); ?>">
+			<p class="faz-dsar-required-note"><?php esc_html_e( 'Fields marked with * are required.', 'faz-cookie-manager' ); ?></p>
 			<form
 				class="faz-dsar-form"
 				method="post"
@@ -263,13 +266,22 @@ class DSAR_Shortcode {
 	 * AJAX handler for form submission.
 	 */
 	public function handle_submit() {
+		// Defensive `return;` after every wp_send_json_*: wp_send_json_* calls
+		// wp_die() which calls exit(), so flow does not continue under default
+		// WP behaviour, but the contract is implicit. Sibling handlers in
+		// Do_Not_Sell_Shortcode return explicitly after every send_json — and
+		// some test harnesses / wp_die_handler filters override wp_die to
+		// throw or return, where the implicit-exit assumption breaks. Be
+		// symmetric and defensive everywhere.
 		if ( ! check_ajax_referer( self::AJAX_ACTION, 'nonce', false ) ) {
 			wp_send_json_error( __( 'Invalid security token. Please refresh the page and try again.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		// Honeypot check.
 		if ( ! empty( $_POST['faz_hp_name'] ) ) {
 			wp_send_json_error( __( 'Submission rejected.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		$name        = isset( $_POST['dsar_name'] ) ? sanitize_text_field( wp_unslash( $_POST['dsar_name'] ) ) : '';
@@ -283,25 +295,30 @@ class DSAR_Shortcode {
 
 		if ( empty( $name ) ) {
 			wp_send_json_error( __( 'Please enter your full name.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		if ( ! is_email( $email ) ) {
 			wp_send_json_error( __( 'Please enter a valid email address.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		// Per-email rate limit: one submission per email per hour.
 		$email_rl_key = 'faz_dsar_rl_em_' . substr( hash_hmac( 'sha256', strtolower( $email ), wp_salt() ), 0, 16 );
 		if ( false !== get_transient( $email_rl_key ) ) {
 			wp_send_json_error( __( 'Too many requests. Please wait 1 hour before submitting again.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		if ( ! in_array( $type, $valid_types, true ) ) {
 			wp_send_json_error( __( 'Please select a valid request type.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		$msg_len = function_exists( 'mb_strlen' ) ? mb_strlen( $message ) : strlen( $message );
 		if ( $msg_len > self::MESSAGE_MAX_LENGTH ) {
 			wp_send_json_error( __( 'Your message is too long. Please limit it to 5,000 characters.', 'faz-cookie-manager' ) );
+			return;
 		}
 
 		// Rate limiting: atomic DB-backed lock via add_option (MySQL INSERT IGNORE),
