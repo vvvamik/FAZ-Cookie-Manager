@@ -77,3 +77,7 @@ cookies.txt
 /wp-content/
 # Probe scripts created on-the-fly during debugging (probe-youtube.mjs etc.)
 /probe-*.mjs
+
+# Local agent instructions — never committed to wp.org/GitHub releases
+CLAUDE.md
+.claude/
