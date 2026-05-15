@@ -175,6 +175,17 @@ class Frontend {
 			add_filter( 'rocket_exclude_defer_js', array( $this, 'rocket_exclude_own_scripts' ) );
 			add_filter( 'rocket_delay_js_exclusions', array( $this, 'rocket_exclude_own_scripts' ) );
 			add_filter( 'rocket_minify_excluded_external_js', array( $this, 'rocket_exclude_own_scripts' ) );
+			// `Load JavaScript deferred` wraps any matching inline <script> in a
+			// DOMContentLoaded callback. Our wp_localize_script payload emits a
+			// top-level `var _fazConfig = {...}`; once wrapped the `var` becomes
+			// function-local and `window._fazConfig` is never set, fataling
+			// `_backupNodes` in script.js. Adding the four bootstrap markers to
+			// `rocket_defer_inline_exclusions` short-circuits the wrapping in
+			// `DeferJS::defer_inline_js()` before its jQuery-detection regex
+			// runs (which would otherwise match the `addtoany-jquery` provider
+			// substring inside the localized JSON). Reported by @dominikkucharski
+			// in #95.
+			add_filter( 'rocket_defer_inline_exclusions', array( $this, 'rocket_exclude_own_inline' ) );
 
 			// Autoptimize exclude helper.
 			add_filter( 'autoptimize_filter_js_exclude', array( $this, 'autoptimize_exclude_own_scripts' ) );
@@ -3637,6 +3648,26 @@ class Frontend {
 			$excludes[] = $pattern;
 		}
 		return $excludes;
+	}
+
+	/**
+	 * WP Rocket inline-content exclude callback. Matches against substrings
+	 * inside inline <script> bodies so DeferJS skips wrapping any tag that
+	 * carries our bootstrap markers.
+	 *
+	 * @param array $excluded Existing inline-content exclusion patterns.
+	 * @return array
+	 */
+	public function rocket_exclude_own_inline( $excluded ) {
+		if ( ! is_array( $excluded ) ) {
+			$excluded = array();
+		}
+		foreach ( array( '_fazConfig', '_fazCfg', '_fazGcm', '_fazTcfConfig' ) as $needle ) {
+			if ( ! in_array( $needle, $excluded, true ) ) {
+				$excluded[] = $needle;
+			}
+		}
+		return $excluded;
 	}
 
 	/**
