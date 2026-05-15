@@ -1208,6 +1208,17 @@ test.describe('Banner settings: persistence and frontend reflection', () => {
 
     // Content
     await clickTab(page, 'content');
+    // The admin form's "current language" defaults to the site's default
+    // language (`it` on this test site). The visitor below opens the
+    // frontend with locale=`en-US`, so without this switch the test
+    // values land in contents.it.notice.* while the visitor keeps reading
+    // contents.en.notice.* defaults → assertion fails with "Received: We
+    // value your privacy". Mirrors the existing `selectLangIfPresent`
+    // pattern used by every other "verify on frontend" test in this file.
+    // Without this call the test passed in full-suite runs only because a
+    // prior test had already saved the language to `en` — an order-of-
+    // tests dependency that broke as soon as the test ran in isolation.
+    await selectLangIfPresent(page, 'faz-b-content-lang', 'en');
     await setInput(page, 'faz-b-notice-title', 'Cross-tab Test Title');
     await setInput(page, 'faz-b-btn-accept-label', 'CT Accept');
 
@@ -1221,6 +1232,10 @@ test.describe('Banner settings: persistence and frontend reflection', () => {
 
     // Preferences
     await clickTab(page, 'preferences');
+    // Same language-switch rationale as the Content tab above — the
+    // Preferences tab carries its own `faz-b-pref-lang` selector and the
+    // pref-title field is stored under contents.<lang>.preferenceCenter.
+    await selectLangIfPresent(page, 'faz-b-pref-lang', 'en');
     await setInput(page, 'faz-b-pref-title', 'CT Preferences');
 
     // Advanced
@@ -1239,8 +1254,11 @@ test.describe('Banner settings: persistence and frontend reflection', () => {
     expect(await getSelectValue(page, 'faz-b-pref-type')).toBe('sidebar');
     expect(await getInputValue(page, 'faz-b-expiry')).toBe('30');
 
-    // Content
+    // Content — re-switch to the same `en` tab used at save time;
+    // populateSettings() repaints the inputs from contents.<currentLang>.*
+    // and the admin defaults the language to `it` again on each page load.
     await clickTab(page, 'content');
+    await selectLangIfPresent(page, 'faz-b-content-lang', 'en');
     expect(await getInputValue(page, 'faz-b-notice-title')).toBe('Cross-tab Test Title');
     expect(await getInputValue(page, 'faz-b-btn-accept-label')).toBe('CT Accept');
 
@@ -1252,8 +1270,9 @@ test.describe('Banner settings: persistence and frontend reflection', () => {
     await clickTab(page, 'buttons');
     expect(await getToggle(page, 'faz-b-settings-toggle')).toBe(true);
 
-    // Preferences
+    // Preferences — same re-switch as Content above.
     await clickTab(page, 'preferences');
+    await selectLangIfPresent(page, 'faz-b-pref-lang', 'en');
     expect(await getInputValue(page, 'faz-b-pref-title')).toBe('CT Preferences');
 
     // Advanced
