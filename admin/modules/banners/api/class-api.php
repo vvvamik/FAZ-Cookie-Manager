@@ -685,9 +685,24 @@ class Api extends Rest_Controller {
 					'type'        => 'object',
 					'context'     => array( 'view', 'edit' ),
 				),
-				'default'       => array(
+				'default'          => array(
 					'description' => __( 'Indicates whether the banner is default or not', 'faz-cookie-manager' ),
 					'type'        => 'boolean',
+					'context'     => array( 'view', 'edit' ),
+				),
+				'target_countries' => array(
+					'description' => __( 'ISO-3166 alpha-2 country codes this banner targets. Empty = match every visitor.', 'faz-cookie-manager' ),
+					'type'        => 'array',
+					'items'       => array(
+						'type'    => 'string',
+						'pattern' => '^[A-Z]{2}$',
+					),
+					'context'     => array( 'view', 'edit' ),
+				),
+				'priority'         => array(
+					'description' => __( 'Tie-break priority when multiple banners target the same country. Higher wins.', 'faz-cookie-manager' ),
+					'type'        => 'integer',
+					'minimum'     => 0,
 					'context'     => array( 'view', 'edit' ),
 				),
 				'date_created'  => array(
