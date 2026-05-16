@@ -419,6 +419,30 @@ test.describe('Session fixes coverage (codex/verify-report-findings)', () => {
 
   // --- 8. Focus management in preference center ---
   test('preference center focus moves into .faz-preference-center and returns to trigger on close', async ({ page }) => {
+    // The .faz-preference-center modal only becomes a focusable visible
+    // surface in popup mode. In classic+pushdown the inner element stays
+    // hidden (the inline preference-wrapper is what expands), so focus()
+    // is a no-op there. Force popup shape so the assertion exercises the
+    // modal path this test was written for. The active banner shape can
+    // be left in classic+pushdown by earlier specs (e.g. close-button
+    // override tests).
+    wpEval(`
+      $banner = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->get_active_banner();
+      if ( $banner ) {
+        $s = $banner->get_settings();
+        if ( ! is_array( $s['settings'] ) ) { $s['settings'] = array(); }
+        $s['settings']['type'] = 'box';
+        $s['settings']['preferenceCenterType'] = 'popup';
+        $banner->set_settings( $s );
+        $banner->save();
+        delete_option( 'faz_banner_template' );
+        if ( function_exists( 'faz_clear_banner_template_cache' ) ) {
+          faz_clear_banner_template_cache();
+        }
+        \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+      }
+    `);
+
     await page.context().clearCookies();
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-faz-tag="notice"]')).toBeVisible();

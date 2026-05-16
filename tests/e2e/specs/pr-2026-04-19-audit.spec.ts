@@ -865,13 +865,10 @@ test.describe('PR audit regressions (2026-04-19)', () => {
         const initialTs = parseTcString(initialTc.tcString);
         expect(initialTs).not.toBeNull();
 
-        // TCF lastUpdated has decisecond resolution. 1200ms was tight enough
-        // that under suite-wide load the second consent update occasionally
-        // landed in the same decisecond bucket as the initial one, making
-        // (updated > initial) false. 2000ms is past one decisecond plus the
-        // JS scheduling jitter the slow PHP-FPM stack adds when many specs
-        // are already running in series.
-        await page.waitForTimeout(2000);
+        // TCF lastUpdated has decisecond resolution. Wait past one decisecond
+        // bucket before mutating consent so the new write lands in a strictly
+        // later bucket. 200ms ≥ 2 deciseconds covers wall-clock + JS jitter.
+        await page.waitForTimeout(200);
         await page.evaluate(() => {
           if (typeof window.revisitFazConsent === 'function') {
             window.revisitFazConsent();
@@ -882,19 +879,34 @@ test.describe('PR audit regressions (2026-04-19)', () => {
         await savePreferences(page);
         await page.waitForFunction(() => typeof (window as any).__tcfapi === 'function', undefined, { timeout: 10_000 });
 
-        const updatedTc = await page.evaluate(async () => {
-          const ping = await new Promise<any>((resolve) => {
-            window.__tcfapi('ping', 2, (data: any) => resolve(data));
-          });
-          const tcData = await new Promise<any>((resolve) => {
-            window.__tcfapi('getTCData', 2, (data: any) => resolve(data));
-          });
-          return { ping, tcData };
-        });
+        // Under suite-wide load, the cookie write that backs the new TCString
+        // can race the immediate getTCData read. Poll the value until the
+        // lastUpdated decisecond strictly advances past initial — this is
+        // robust to PHP-FPM stalls, raf coalescing, and decisecond bucket
+        // alignment without relying on a fixed sleep.
+        const initialLast = initialTs?.lastUpdated ?? 0;
+        let updatedTc: { ping: any; tcData: any } | null = null;
+        await expect
+          .poll(
+            async () => {
+              updatedTc = await page.evaluate(
+                async () =>
+                  new Promise<any>((resolve) => {
+                    const pingP = new Promise<any>((r) => window.__tcfapi('ping', 2, r));
+                    const tcDataP = new Promise<any>((r) => window.__tcfapi('getTCData', 2, r));
+                    Promise.all([pingP, tcDataP]).then(([ping, tcData]) => resolve({ ping, tcData }));
+                  }),
+              );
+              const ts = parseTcString(updatedTc!.tcData.tcString);
+              return ts !== null && ts.lastUpdated > initialLast;
+            },
+            { timeout: 10_000 },
+          )
+          .toBe(true);
 
-        const updatedTs = parseTcString(updatedTc.tcData.tcString);
+        const updatedTs = parseTcString(updatedTc!.tcData.tcString);
         expect(updatedTs).not.toBeNull();
-        expect(updatedTc.ping.cmpStatus).toBe('loaded');
+        expect(updatedTc!.ping.cmpStatus).toBe('loaded');
         expect(updatedTs?.created).toBe(initialTs?.created);
         expect((updatedTs?.lastUpdated ?? 0) > (initialTs?.lastUpdated ?? 0)).toBe(true);
       } finally {
