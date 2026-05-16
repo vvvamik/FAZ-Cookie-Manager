@@ -25,15 +25,13 @@ const WP_CLI_ENV = {
   WP_CLI_PHP_ARGS: '-d error_reporting=E_ERROR -d display_errors=0',
 };
 const WP_CLI_TIMEOUT_ENV = Number(process.env.WP_CLI_TIMEOUT_MS);
-// Default raised from 30s → 60s. The local test environment has ~38 active
-// plugins (including the WooCommerce stack and analytics/tracker plugins the
-// provider-matrix scanner needs to detect). Each `wp plugin activate X` call
-// bootstraps WordPress, fires plugins_loaded for all of them, and runs the
-// target's activation hooks. Under suite-wide load (PHP-FPM saturated,
-// MySQL pool busy after ~500 tests) the cold path occasionally exceeds 30s
-// and the cascading timeout kills downstream tests with NETWORK_IO_SUSPENDED.
-// 60s leaves headroom while still surfacing real hangs.
-const WP_CLI_TIMEOUT_MS = Number.isFinite(WP_CLI_TIMEOUT_ENV) && WP_CLI_TIMEOUT_ENV > 0 ? WP_CLI_TIMEOUT_ENV : 60_000;
+// Default 30s. Briefly tried 60s to cushion `wp plugin activate` under
+// suite-wide load (commit 4bb6cef) — that change made things WORSE because
+// downstream tests waited up to 60s for a stuck activation instead of
+// failing fast at 30s, so multi-minute stalls cascaded into 26+ minute
+// test runs (e.g. frontend-consent.spec.ts:5 = 26.9m, DSAR-09 = 32.7m in
+// the v10 suite). Reverted to 30s; fail-fast is the right default.
+const WP_CLI_TIMEOUT_MS = Number.isFinite(WP_CLI_TIMEOUT_ENV) && WP_CLI_TIMEOUT_ENV > 0 ? WP_CLI_TIMEOUT_ENV : 30_000;
 
 export const SCAN_LAB_PAGE_SLUGS = [
   'faz-lab-js-basic',
