@@ -834,7 +834,13 @@ test.describe('PR audit regressions (2026-04-19)', () => {
         const initialTs = parseTcString(initialTc.tcString);
         expect(initialTs).not.toBeNull();
 
-        await page.waitForTimeout(1200);
+        // TCF lastUpdated has decisecond resolution. 1200ms was tight enough
+        // that under suite-wide load the second consent update occasionally
+        // landed in the same decisecond bucket as the initial one, making
+        // (updated > initial) false. 2000ms is past one decisecond plus the
+        // JS scheduling jitter the slow PHP-FPM stack adds when many specs
+        // are already running in series.
+        await page.waitForTimeout(2000);
         await page.evaluate(() => {
           if (typeof window.revisitFazConsent === 'function') {
             window.revisitFazConsent();
