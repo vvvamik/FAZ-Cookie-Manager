@@ -141,12 +141,28 @@ const _fazServerRevision = isNaN(_fazServerRevisionParsed) || _fazServerRevision
     : _fazServerRevisionParsed;
 const _fazHasConsentCookie = typeof currentCookieMap["fazcookie-consent"] === "string"
     && currentCookieMap["fazcookie-consent"] !== "";
-const _fazStoredRevision = parseInt(fazcookieConsentMap.rev, 10);
-const _fazConsentInvalidated =
-    _fazHasConsentCookie &&
-    _fazServerRevision > 1 &&
-    (isNaN(_fazStoredRevision) || _fazStoredRevision < _fazServerRevision);
-if (_fazConsentInvalidated) {
+function _fazCurrentBannerSlug() {
+    return _fazStore && _fazStore._bannerSlug ? String(_fazStore._bannerSlug) : "";
+}
+function _fazCurrentLaw() {
+    if (_fazStore && _fazStore._activeLaw) return String(_fazStore._activeLaw);
+    if (_fazStore && _fazStore._bannerConfig && _fazStore._bannerConfig.settings) {
+        return String(_fazStore._bannerConfig.settings.applicableLaw || "");
+    }
+    return "";
+}
+function _fazConsentScopeChanged() {
+    if (!_fazHasConsentCookie || !_fazStore || !_fazStore._geoRouting) return false;
+    const currentBannerSlug = _fazCurrentBannerSlug();
+    const currentLaw = _fazCurrentLaw();
+    const storedBannerSlug = ref._fazGetFromStore("banner") || fazcookieConsentMap.banner || "";
+    const storedLaw = ref._fazGetFromStore("law") || fazcookieConsentMap.law || "";
+    return !!(
+        (currentBannerSlug && storedBannerSlug !== currentBannerSlug) ||
+        (currentLaw && storedLaw !== currentLaw)
+    );
+}
+function _fazInvalidateStoredConsent() {
     // Delete all consent-tracking cookies immediately so later scripts in the
     // same page load (GCM, TCF, consent forwarding) do not keep reading the
     // stale state.
@@ -154,11 +170,27 @@ if (_fazConsentInvalidated) {
     // Wipe the entries that gate the banner so showBanner() logic triggers.
     // We keep `consentid` so cross-session analytics can still correlate if
     // the visitor re-consents.
-    ["consent", "action"].forEach((k) => { fazcookieConsentMap[k] = ""; });
-    _fazStore._categories.forEach(({ slug }) => { fazcookieConsentMap[slug] = ""; });
+    ["consent", "action", "banner", "law"].forEach((k) => {
+        fazcookieConsentMap[k] = "";
+        ref._fazConsentStore.set(k, "");
+    });
+    _fazStore._categories.forEach(({ slug }) => {
+        fazcookieConsentMap[slug] = "";
+        ref._fazConsentStore.set(slug, "");
+    });
+    _fazClearStoredServiceConsent();
+}
+const _fazStoredRevision = parseInt(fazcookieConsentMap.rev, 10);
+const _fazConsentRevisionInvalidated =
+    _fazHasConsentCookie &&
+    _fazServerRevision > 1 &&
+    (isNaN(_fazStoredRevision) || _fazStoredRevision < _fazServerRevision);
+const _fazConsentInvalidated = _fazConsentRevisionInvalidated || _fazConsentScopeChanged();
+if (_fazConsentInvalidated) {
+    _fazInvalidateStoredConsent();
 }
 
-["consentid", "consent", "action"]
+["consentid", "consent", "action", "banner", "law"]
     .concat(_fazStore._categories.map(({ slug }) => slug))
     .forEach((item) =>
         ref._fazConsentStore.set(item, fazcookieConsentMap[item] || "")
@@ -390,6 +422,10 @@ function _fazInitOperations() {
         // re-confirmed consent — defeating the "treat age-gate as no-
         // consent-yet" semantics the branch is built around.
         _fazClearStoredServiceConsent();
+    }
+    if (_fazStoredAction && _fazConsentScopeChanged()) {
+        _fazInvalidateStoredConsent();
+        _fazStoredAction = null;
     }
     if (!_fazStoredAction || _fazPreviewEnabled()) {
         _fazShowBanner();
@@ -647,6 +683,12 @@ function _fazApplyBannerPayload(payload) {
     if (payload.i18n && typeof payload.i18n === 'object') {
         _fazStore._i18n = Object.assign({}, _fazStore._i18n || {}, payload.i18n);
     }
+    if (payload.bannerSlug) {
+        _fazStore._bannerSlug = String(payload.bannerSlug);
+    }
+    if (payload.activeLaw) {
+        _fazStore._activeLaw = String(payload.activeLaw);
+    }
     if (typeof payload.html === 'string' && payload.html !== '') {
         var tpl = document.getElementById('fazBannerTemplate');
         if (tpl) tpl.textContent = payload.html;
@@ -856,7 +898,7 @@ function _fazToggleRevisit(force = false) {
     }
 }
 function _fazGetLaw() {
-    return _fazStore._bannerConfig.settings.applicableLaw;
+    return _fazCurrentLaw() || _fazStore._bannerConfig.settings.applicableLaw;
 }
 function _fazGetType() {
     return _fazStore._bannerConfig.settings.type;
@@ -1496,6 +1538,8 @@ function _fazAcceptCookies(choice = "all") {
     _fazSetConsentID();
 
     ref._fazSetInStore("action", "yes");
+    ref._fazSetInStore("banner", _fazCurrentBannerSlug());
+    ref._fazSetInStore("law", _fazCurrentLaw());
     if (activeLaw === 'gdpr') {
         ref._fazSetInStore("consent", choice === "reject" ? "no" : "yes");
     } else {

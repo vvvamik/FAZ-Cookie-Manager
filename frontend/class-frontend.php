@@ -199,6 +199,7 @@ class Frontend {
 		// the filter simply does not exist, so add_filter is a safe no-op
 		// and the OB handles everything.
 		add_filter( 'wp_inline_script_tag', array( $this, 'filter_inline_script_tag' ), 10, 3 );
+		add_action( 'send_headers', array( $this, 'send_geo_cache_headers' ), 0 );
 		add_action( 'send_headers', array( $this, 'shred_non_consented_cookies' ) );
 		add_action( 'send_headers', array( $this, 'send_vary_header' ) );
 
@@ -379,15 +380,15 @@ class Frontend {
 					$consent_lang = 'EN';
 				}
 
-				// gdprApplies: true when visitor is in EU/EEA or country unknown (safe default).
-				$visitor_country = Geolocation::get_country();
-				$gdpr_applies    = empty( $visitor_country ) ? 'true' : ( Geolocation::is_eu() ? 'true' : 'false' );
+					// gdprApplies: true when visitor is in EU/EEA or country unknown (safe default).
+					$visitor_country = $this->get_visitor_country();
+					$gdpr_applies    = empty( $visitor_country ) || in_array( $visitor_country, Geolocation::$eu_countries, true );
 
 				// Build TCF config with GVL data if available.
 				$tcf_config = array(
 					'publisherCC'         => $country_code,
 					'consentLanguage'     => $consent_lang,
-					'gdprApplies'         => 'true' === $gdpr_applies,
+						'gdprApplies'         => $gdpr_applies,
 					'cmpId'               => absint( $this->settings->get( 'iab', 'cmp_id' ) ),
 					'purposeOneTreatment' => (bool) $this->settings->get( 'iab', 'purpose_one_treatment' ),
 				);
@@ -642,6 +643,7 @@ class Frontend {
 		if ( ! faz_is_front_end_request() ) {
 			return;
 		}
+		$this->maybe_disable_country_page_cache();
 		// AMP uses <amp-consent>: skip the classic JS banner/runtime.
 		if ( apply_filters( 'faz_is_amp_request', false ) ) {
 			return;
@@ -695,7 +697,7 @@ class Frontend {
 			return false;
 		}
 
-		$country = Geolocation::get_country();
+		$country = $this->get_visitor_country();
 		// If we can't detect the country, show the banner (safe default).
 		if ( empty( $country ) ) {
 			return false;
@@ -715,14 +717,6 @@ class Frontend {
 	}
 
 	/**
-	 * Check if the banner should be disabled for this visitor based on
-	 * the global geo-targeting settings (Settings → Geolocation).
-	 *
-	 * Shared guard used by both enqueue_scripts() and load_banner().
-	 *
-	 * @return bool True if the banner should NOT be shown.
-	 */
-	/**
 	 * Resolve the visitor's ISO-3166 alpha-2 country code using the same
 	 * detection chain that powers is_geo_banner_disabled():
 	 *
@@ -740,55 +734,93 @@ class Frontend {
 	 * @return string Upper-case 2-letter code or '' if unknown.
 	 */
 	private function get_visitor_country() {
-		$country = '';
-		if (
-			apply_filters( 'faz_trust_cf_ipcountry_header', false )
-			&& isset( $_SERVER['HTTP_CF_IPCOUNTRY'] )
-			&& preg_match( '/^[A-Z]{2}$/', sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) )
-			&& 'XX' !== sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) )
-		) {
-			$country = sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) );
-		}
-		if ( '' === $country ) {
-			$country = Geolocation::get_country();
-		}
-		$country = is_string( $country ) ? strtoupper( trim( $country ) ) : '';
-		if ( 1 !== preg_match( '/^[A-Z]{2}$/', $country ) ) {
-			$country = '';
-		}
-		// Re-validate AFTER the filter so a hook returning lower-case, padded,
-		// or non-ISO values (e.g. 'us', ' US ', 'USA') cannot route into an
-		// unexpected fallback. Invalid filter output collapses to '' (no signal),
-		// which sends the picker to the match-all / banner_default chain.
-		$filtered = (string) apply_filters( 'faz_visitor_country', $country );
-		$filtered = strtoupper( trim( $filtered ) );
-		if ( 1 !== preg_match( '/^[A-Z]{2}$/', $filtered ) ) {
-			return '';
-		}
-		return $filtered;
+		return Geolocation::get_visitor_country();
 	}
 
+	/**
+	 * Whether the current frontend response can vary by visitor country.
+	 *
+	 * @return bool
+	 */
+	private function is_country_dependent_output() {
+		$settings  = $this->get_faz_settings();
+		$dependent = false;
+
+		if (
+			! empty( $settings['geolocation']['geo_targeting'] )
+			&& isset( $settings['geolocation']['default_behavior'] )
+			&& 'no_banner' === $settings['geolocation']['default_behavior']
+		) {
+			$dependent = true;
+		}
+
+		if ( Controller::get_instance()->has_country_dependent_banners() ) {
+			$dependent = true;
+		}
+
+		return (bool) apply_filters( 'faz_country_dependent_banner_output', $dependent, $settings );
+	}
+
+	/**
+	 * Set common page-cache bypass constants for country-dependent banners.
+	 *
+	 * @return void
+	 */
+	private function maybe_disable_country_page_cache() {
+		if ( ! $this->is_country_dependent_output() ) {
+			return;
+		}
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		if ( ! defined( 'DONOTCACHEOBJECT' ) ) {
+			define( 'DONOTCACHEOBJECT', true );
+		}
+		if ( ! defined( 'DONOTCACHEDB' ) ) {
+			define( 'DONOTCACHEDB', true );
+		}
+	}
+
+	/**
+	 * Emit no-cache headers for pages whose banner varies by visitor country.
+	 *
+	 * @return void
+	 */
+	public function send_geo_cache_headers() {
+		if ( is_admin() || wp_doing_ajax() || wp_doing_cron() || true === faz_disable_banner() ) {
+			return;
+		}
+		if ( ! $this->is_country_dependent_output() || headers_sent() ) {
+			return;
+		}
+
+		$this->maybe_disable_country_page_cache();
+		header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
+		header( 'Pragma: no-cache' );
+		header( 'X-LiteSpeed-Cache-Control: no-cache' );
+		if ( apply_filters( 'faz_trust_cf_ipcountry_header', false ) ) {
+			header( 'Vary: CF-IPCountry', false );
+		}
+		if ( defined( 'LSCWP_V' ) ) {
+			do_action( 'litespeed_control_set_nocache', 'FAZ country-dependent banner' );
+		}
+	}
+
+	/**
+	 * Check if the banner should be disabled for this visitor based on
+	 * the global geo-targeting settings (Settings → Geolocation).
+	 *
+	 * Shared guard used by both enqueue_scripts() and load_banner().
+	 *
+	 * @return bool True if the banner should NOT be shown.
+	 */
 	private function is_geo_banner_disabled() {
 		$faz_geo_settings = $this->get_faz_settings();
 		if ( empty( $faz_geo_settings['geolocation']['geo_targeting'] ) ) {
 			return false;
 		}
 
-		$country = '';
-		// Try Cloudflare header first (free, no MaxMind needed).
-		// Only trust the header when explicitly opted in via filter and value is valid.
-		if (
-			apply_filters( 'faz_trust_cf_ipcountry_header', false )
-			&& isset( $_SERVER['HTTP_CF_IPCOUNTRY'] )
-			&& preg_match( '/^[A-Z]{2}$/', sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) )
-			&& 'XX' !== sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) )
-		) {
-			$country = sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) );
-		}
-		// Fallback to MaxMind / other detection methods.
-		if ( empty( $country ) ) {
-			$country = Geolocation::get_country();
-		}
+		$country = $this->get_visitor_country();
 
 		if ( ! empty( $country ) ) {
 			$target_regions = isset( $faz_geo_settings['geolocation']['target_regions'] )
@@ -954,7 +986,9 @@ class Frontend {
 			'_publicURL'    => set_url_scheme( get_site_url() ),
 			'_expiry'       => max( 1, isset( $banner_settings['settings']['consentExpiry']['value'] ) ? absint( $banner_settings['settings']['consentExpiry']['value'] ) : 180 ),
 			'_categories'   => $this->get_cookie_groups(),
-			'_activeLaw'    => 'gdpr',
+			'_activeLaw'    => $banner->get_law(),
+			'_bannerSlug'   => $banner->get_slug(),
+			'_geoRouting'   => $this->is_country_dependent_output(),
 			'_rootDomain'   => $this->get_cookie_domain(),
 			'_block'        => true,
 			'_showBanner'   => true,

@@ -21,6 +21,7 @@ use FazCookie\Admin\Modules\Banners\Includes\Template as Banner_Template;
 use FazCookie\Frontend\Modules\Shortcodes\Shortcodes;
 use FazCookie\Admin\Modules\Cookies\Includes\Category_Controller;
 use FazCookie\Admin\Modules\Cookies\Includes\Cookie_Categories;
+use FazCookie\Includes\Geolocation;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
@@ -133,7 +134,9 @@ class Banner_Rest {
 			);
 		}
 
-		$banner = Banner_Controller::get_instance()->get_active_banner();
+		$controller = Banner_Controller::get_instance();
+		$country    = Geolocation::get_visitor_country();
+		$banner     = $controller->get_active_banner_for_country( $country );
 		if ( ! $banner ) {
 			return new WP_Error(
 				'faz_no_banner',
@@ -201,6 +204,8 @@ class Banner_Rest {
 
 		$payload = array(
 			'language'   => $lang,
+			'bannerSlug' => $banner->get_slug(),
+			'activeLaw'  => $banner->get_law(),
 			'html'       => $html,
 			'styles'     => $styles,
 			'shortCodes' => $short_codes,
@@ -209,9 +214,18 @@ class Banner_Rest {
 		);
 
 		$response = new WP_REST_Response( $payload, 200 );
-		// Allow CDNs to cache per-language responses for a short TTL. The
-		// payload is deterministic for a given (lang, plugin version) pair.
-		$response->header( 'Cache-Control', 'public, max-age=300' );
+		if ( $controller->has_country_dependent_banners() ) {
+			$response->header( 'Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0' );
+			$response->header( 'Pragma', 'no-cache' );
+			$response->header( 'X-LiteSpeed-Cache-Control', 'no-cache' );
+			if ( apply_filters( 'faz_trust_cf_ipcountry_header', false ) ) {
+				$response->header( 'Vary', 'CF-IPCountry' );
+			}
+		} else {
+			// Allow CDNs to cache per-language responses for a short TTL. The
+			// payload is deterministic when the selected banner is not country-dependent.
+			$response->header( 'Cache-Control', 'public, max-age=300' );
+		}
 		return $response;
 	}
 

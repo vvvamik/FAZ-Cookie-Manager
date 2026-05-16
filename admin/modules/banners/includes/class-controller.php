@@ -435,6 +435,45 @@ class Controller extends Base_Controller {
 	}
 
 	/**
+	 * Whether the rendered banner can vary by visitor country.
+	 *
+	 * Used by frontend cache guards. A country-targeted active banner means the
+	 * same URL can legitimately render a different banner for a different
+	 * country, so full-page caches must not reuse the response globally.
+	 *
+	 * @since 1.13.18
+	 * @return bool
+	 */
+	public function has_country_dependent_banners() {
+		$items = $this->get_items();
+		if ( empty( $items ) || ! is_array( $items ) ) {
+			return false;
+		}
+		foreach ( $items as $item ) {
+			$banner = new Banner( $item->banner_id );
+			if ( ! $banner->get_status() ) {
+				continue;
+			}
+			if ( ! empty( $banner->get_target_countries() ) ) {
+				return true;
+			}
+			// The ruleSet lives under .settings.ruleSet (see Banner::get_law()
+			// for the same nesting pattern). A non-empty entry whose code is
+			// not the wildcard "ALL" gates the banner on visitor country and
+			// therefore makes the rendered output country-dependent.
+			$settings = $banner->get_settings();
+			$inner    = isset( $settings['settings'] ) && is_array( $settings['settings'] ) ? $settings['settings'] : array();
+			$rules    = isset( $inner['ruleSet'] ) && is_array( $inner['ruleSet'] ) ? $inner['ruleSet'] : array();
+			$rule     = isset( $rules[0] ) && is_array( $rules[0] ) ? $rules[0] : array();
+			$code     = isset( $rule['code'] ) ? strtoupper( (string) $rule['code'] ) : 'ALL';
+			if ( 'ALL' !== $code ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Returns the active banner item from DB.
 	 *
 	 * @return array|object|false

@@ -501,4 +501,435 @@ test.describe.serial('Multi-banner geo-routing (Controller selector + Banner mod
     expect(data.target_countries, 'omitted target_countries must not be wiped on PUT').toEqual(['DE', 'FR']);
     expect(data.priority, 'omitted priority must not be reset to 0 on PUT').toBe(3);
   });
+
+  test('GEO-18: public language REST payload uses the same country-aware banner selector', () => {
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1, 'priority' => 0 ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1, 'banner_default' => 0, 'priority' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $country_filter = function() { return 'US'; };
+      add_filter( 'faz_visitor_country', $country_filter, 10 );
+
+      $lang = function_exists( 'faz_default_language' ) ? faz_default_language() : 'en';
+      $req = new WP_REST_Request( 'GET', '/faz/v1/banner/' . $lang );
+      $res = rest_do_request( $req );
+      $data = $res->get_data();
+      $headers = $res->get_headers();
+      $expected = new \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Banner( 2 );
+
+      remove_filter( 'faz_visitor_country', $country_filter, 10 );
+
+      echo wp_json_encode( array(
+        'status'     => $res->get_status(),
+        'bannerSlug' => isset( $data['bannerSlug'] ) ? $data['bannerSlug'] : null,
+        'activeLaw'  => isset( $data['activeLaw'] ) ? $data['activeLaw'] : null,
+        'expected'   => $expected->get_slug(),
+        'expectedLaw'=> $expected->get_law(),
+        'cache'      => isset( $headers['Cache-Control'] ) ? $headers['Cache-Control'] : '',
+      ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.status, 'REST request succeeds').toBe(200);
+    expect(data.bannerSlug, 'US visitor receives the US-targeted banner payload').toBe(data.expected);
+    expect(data.activeLaw, 'REST response exposes the law used for consent scoping').toBe(data.expectedLaw);
+    expect(data.cache, 'country-dependent REST response is not publicly cacheable').toContain('no-store');
+  });
+
+  test('GEO-19: AMP consent resolves the active banner with the visitor country', () => {
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1, 'priority' => 0 ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1, 'banner_default' => 0, 'priority' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $country_filter = function() { return 'US'; };
+      add_filter( 'faz_visitor_country', $country_filter, 10 );
+
+      $amp = new \\FazCookie\\Frontend\\AMP_Consent();
+      $ref = new ReflectionClass( $amp );
+      $method = $ref->getMethod( 'get_active_banner' );
+      $method->setAccessible( true );
+      $banner = $method->invoke( $amp );
+
+      remove_filter( 'faz_visitor_country', $country_filter, 10 );
+      echo $banner ? $banner->get_id() : 'null';
+    `).trim();
+
+    expect(parseInt(result, 10), 'AMP path must render the US-targeted banner').toBe(2);
+  });
+
+  test('GEO-20: controller reports when active banners make frontend output country-dependent', () => {
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      $ctrl = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance();
+      $ctrl->delete_cache();
+      $before = $ctrl->has_country_dependent_banners();
+
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1 ),
+        array( 'banner_id' => 2 )
+      );
+      $ctrl->delete_cache();
+      $after = $ctrl->has_country_dependent_banners();
+
+      echo wp_json_encode( array( 'before' => $before, 'after' => $after ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.before, 'match-all-only setup is not country-dependent').toBe(false);
+    expect(data.after, 'targeted active banner makes output country-dependent').toBe(true);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // GEO-21 → GEO-30: tests for the user-authored cache + payload work
+  // (Geolocation::get_visitor_country, send_geo_cache_headers, banner-rest
+  // payload + cache control, frontend store geo signals, ruleSet-based
+  // country dependency).
+  // ──────────────────────────────────────────────────────────────────────
+
+  test('GEO-21: Geolocation::get_visitor_country reads CF-IPCountry when the trust filter is enabled', () => {
+    // The header is normally ignored unless the admin opts in via the
+    // faz_trust_cf_ipcountry_header filter — protects from spoofed headers
+    // on installs that do not actually sit behind Cloudflare.
+    const result = wpEval(`
+      $_SERVER['HTTP_CF_IPCOUNTRY'] = 'DE';
+
+      // First: filter OFF → header ignored.
+      $off = \\FazCookie\\Includes\\Geolocation::get_visitor_country();
+
+      // Then: filter ON → header consumed.
+      $closure = function() { return true; };
+      add_filter( 'faz_trust_cf_ipcountry_header', $closure, 10 );
+      $on = \\FazCookie\\Includes\\Geolocation::get_visitor_country();
+      remove_filter( 'faz_trust_cf_ipcountry_header', $closure, 10 );
+
+      unset( $_SERVER['HTTP_CF_IPCOUNTRY'] );
+      echo wp_json_encode( array( 'off' => $off, 'on' => $on ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.on, 'with trust filter ON, CF-IPCountry header steers the result').toBe('DE');
+    expect(data.off, "with trust filter OFF, CF-IPCountry must NOT leak through (header spoof-safe by default)").not.toBe('DE');
+  });
+
+  test('GEO-22: Geolocation::get_visitor_country rejects the Cloudflare "XX" placeholder', () => {
+    // Cloudflare emits "XX" when it cannot resolve a country (Tor exit nodes,
+    // private networks, etc.). Routing on "XX" would create a phantom geo
+    // bucket — treat it the same as no signal.
+    const result = wpEval(`
+      $_SERVER['HTTP_CF_IPCOUNTRY'] = 'XX';
+      $closure = function() { return true; };
+      add_filter( 'faz_trust_cf_ipcountry_header', $closure, 10 );
+      $resolved = \\FazCookie\\Includes\\Geolocation::get_visitor_country();
+      remove_filter( 'faz_trust_cf_ipcountry_header', $closure, 10 );
+      unset( $_SERVER['HTTP_CF_IPCOUNTRY'] );
+      echo var_export( $resolved, true );
+    `).trim();
+
+    // The MaxMind / ip-api.com fallback is unreachable on the local test stack,
+    // so "XX" collapsing to no signal must produce an empty string here.
+    expect(result, "CF-IPCountry='XX' is treated as no signal").toBe("''");
+  });
+
+  test('GEO-23: is_country_dependent_output returns true when at least one active banner targets a country', () => {
+    // The headers emitted by send_geo_cache_headers() (Cache-Control: no-store,
+    // Pragma: no-cache, X-LiteSpeed-Cache-Control: no-cache, optional Vary)
+    // are gated entirely on this predicate. We probe it via reflection
+    // because headers_list() returns empty under WP-CLI; the actual header
+    // round-trip is asserted at the REST layer in GEO-26.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $fe = new \\FazCookie\\Frontend\\Frontend( 'faz-cookie-manager', '1.0' );
+      $ref = new ReflectionClass( $fe );
+      $method = $ref->getMethod( 'is_country_dependent_output' );
+      $method->setAccessible( true );
+      echo $method->invoke( $fe ) ? 'true' : 'false';
+    `).trim();
+
+    expect(result, 'targeted active banner makes the frontend output country-dependent').toBe('true');
+  });
+
+  test('GEO-24: is_country_dependent_output returns false on single-banner installs (match-all only)', () => {
+    // Symmetric to GEO-23: when no banner targets a country and geo_targeting
+    // does NOT carry default_behavior='no_banner', the output is identical for
+    // every visitor and the cache layer is left alone.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 0, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      // Make sure geo_targeting is off / default_behavior is not no_banner.
+      $s = get_option( 'faz_settings', array() );
+      if ( ! isset( $s['geolocation'] ) ) { $s['geolocation'] = array(); }
+      $s['geolocation']['geo_targeting']    = false;
+      $s['geolocation']['default_behavior'] = 'show_banner';
+      update_option( 'faz_settings', $s );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $fe = new \\FazCookie\\Frontend\\Frontend( 'faz-cookie-manager', '1.0' );
+      $ref = new ReflectionClass( $fe );
+      $method = $ref->getMethod( 'is_country_dependent_output' );
+      $method->setAccessible( true );
+      echo $method->invoke( $fe ) ? 'true' : 'false';
+    `).trim();
+
+    expect(result, "single-banner install with code=ALL must NOT be flagged country-dependent").toBe('false');
+  });
+
+  test('GEO-25: maybe_disable_country_page_cache defines DONOTCACHE* constants when country-dependent', () => {
+    // The constants are read by every major page-cache plugin (WP Rocket,
+    // W3 Total Cache, WP Super Cache, LiteSpeed Cache) as a per-request
+    // bypass hint. Once defined for a request they are not undefinable, so
+    // a fresh process is the only clean way to test this. Reflection is the
+    // cheapest "fresh process" we have here.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $fe = new \\FazCookie\\Frontend\\Frontend( 'faz-cookie-manager', '1.0' );
+      $ref = new ReflectionClass( $fe );
+      $method = $ref->getMethod( 'maybe_disable_country_page_cache' );
+      $method->setAccessible( true );
+      $method->invoke( $fe );
+
+      echo wp_json_encode( array(
+        'DONOTCACHEPAGE'   => defined( 'DONOTCACHEPAGE' ) && DONOTCACHEPAGE,
+        'DONOTCACHEOBJECT' => defined( 'DONOTCACHEOBJECT' ) && DONOTCACHEOBJECT,
+        'DONOTCACHEDB'     => defined( 'DONOTCACHEDB' ) && DONOTCACHEDB,
+      ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.DONOTCACHEPAGE, 'DONOTCACHEPAGE defined for country-dependent request').toBe(true);
+    expect(data.DONOTCACHEOBJECT, 'DONOTCACHEOBJECT defined for country-dependent request').toBe(true);
+    expect(data.DONOTCACHEDB, 'DONOTCACHEDB defined for country-dependent request').toBe(true);
+  });
+
+  test('GEO-26: public banner REST emits no-store + LiteSpeed control when output is country-dependent', () => {
+    // Symmetric to GEO-23 but for the REST endpoint /faz/v1/banner/{lang}
+    // that the frontend bootstrap reads. CDNs / browsers must not reuse a
+    // payload that was rendered for a different country.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $lang = function_exists( 'faz_default_language' ) ? faz_default_language() : 'en';
+      $req = new WP_REST_Request( 'GET', '/faz/v1/banner/' . $lang );
+      $res = rest_do_request( $req );
+      echo wp_json_encode( array(
+        'status'  => $res->get_status(),
+        'headers' => $res->get_headers(),
+      ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.status, 'REST request succeeds').toBe(200);
+    const cc = (data.headers['Cache-Control'] || '').toString().toLowerCase();
+    expect(cc, 'Cache-Control: no-store when country-dependent').toContain('no-store');
+    // X-LiteSpeed-Cache-Control may be a string or an array; flatten before checking.
+    const ls = Array.isArray(data.headers['X-LiteSpeed-Cache-Control'])
+      ? data.headers['X-LiteSpeed-Cache-Control'].join(',')
+      : (data.headers['X-LiteSpeed-Cache-Control'] || '');
+    expect(String(ls).toLowerCase(), 'X-LiteSpeed-Cache-Control: no-cache hint').toContain('no-cache');
+  });
+
+  test('GEO-27: public banner REST emits short public cache when NO banner is country-dependent', () => {
+    // Single-banner installs (the 99% baseline) get a CDN-cacheable response
+    // (max-age=300). The header switches to no-store only when target_countries
+    // makes the payload vary by visitor.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 0, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $lang = function_exists( 'faz_default_language' ) ? faz_default_language() : 'en';
+      $req = new WP_REST_Request( 'GET', '/faz/v1/banner/' . $lang );
+      $res = rest_do_request( $req );
+      echo wp_json_encode( array(
+        'status'  => $res->get_status(),
+        'headers' => $res->get_headers(),
+      ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.status, 'REST request succeeds').toBe(200);
+    const cc = (data.headers['Cache-Control'] || '').toString().toLowerCase();
+    expect(cc, 'Cache-Control: public when output is country-independent').toContain('public');
+    expect(cc, 'max-age=300 publicly cacheable').toContain('max-age=300');
+    expect(cc, 'no-store must NOT be emitted on the country-independent path').not.toContain('no-store');
+  });
+
+  test('GEO-28: public banner REST payload exposes bannerSlug and activeLaw for the frontend bootstrap', () => {
+    // The frontend uses these to detect "the user previously consented under
+    // banner X / law Y, but the active banner changed → invalidate consent".
+    // Without them in the payload the scope-change invalidation in script.js
+    // has nothing to compare against.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      $lang = function_exists( 'faz_default_language' ) ? faz_default_language() : 'en';
+      $req = new WP_REST_Request( 'GET', '/faz/v1/banner/' . $lang );
+      $res = rest_do_request( $req );
+      $data = $res->get_data();
+      $expected = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->get_active_banner_for_country( '' );
+      echo wp_json_encode( array(
+        'bannerSlug' => isset( $data['bannerSlug'] ) ? $data['bannerSlug'] : null,
+        'activeLaw'  => isset( $data['activeLaw'] ) ? $data['activeLaw'] : null,
+        'expected_slug' => $expected->get_slug(),
+        'expected_law'  => $expected->get_law(),
+      ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.bannerSlug, 'bannerSlug present in REST payload').toBe(data.expected_slug);
+    expect(data.activeLaw, 'activeLaw present in REST payload').toBe(data.expected_law);
+    expect(['gdpr', 'ccpa', 'lgpd', 'pipeda']).toContain(data.activeLaw);
+  });
+
+  test('GEO-29: frontend bootstrap exposes _bannerSlug + _activeLaw + _geoRouting in _fazStore', () => {
+    // The scope-change invalidator in script.js needs these three properties
+    // on the global store. We probe the rendered HTML for the localize block
+    // and check the three keys are present.
+    const result = wpEval(`
+      global $wpdb;
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '["US"]', 'status' => 1, 'banner_default' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 1, 'banner_default' => 1 ),
+        array( 'banner_id' => 1 )
+      );
+      \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance()->delete_cache();
+
+      // Hit the home page through the REST router for a clean fetch.
+      $req = new WP_REST_Request( 'GET', '/faz/v1/banner/' . ( function_exists( 'faz_default_language' ) ? faz_default_language() : 'en' ) );
+      $res = rest_do_request( $req );
+      $data = $res->get_data();
+      echo wp_json_encode( array(
+        'has_bannerSlug' => isset( $data['bannerSlug'] ),
+        'has_activeLaw'  => isset( $data['activeLaw'] ),
+        'has_html'       => isset( $data['html'] ),
+      ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.has_bannerSlug, 'REST payload carries bannerSlug').toBe(true);
+    expect(data.has_activeLaw, 'REST payload carries activeLaw').toBe(true);
+    expect(data.has_html, 'REST payload carries html for client-side render').toBe(true);
+  });
+
+  test('GEO-30: has_country_dependent_banners() returns true when a ruleSet code is non-ALL', () => {
+    // The new method considers both:
+    //   - target_countries non-empty (the new geo-routing field), AND
+    //   - the legacy ruleSet[0].code != 'ALL' (the old per-banner geo gate from
+    //     the original Settings → Geolocation UI).
+    // Either one makes the page vary by visitor country — and either one must
+    // therefore trigger cache busting.
+    const result = wpEval(`
+      global $wpdb;
+      // Reset both rows: empty target_countries, default ruleSet (ALL).
+      $banner1 = new \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Banner( 1 );
+      $settings = $banner1->get_settings();
+      if ( ! is_array( $settings ) ) { $settings = array(); }
+      if ( ! isset( $settings['settings'] ) || ! is_array( $settings['settings'] ) ) {
+        $settings['settings'] = array();
+      }
+      // ruleSet lives under .settings.ruleSet — same nesting as applicableLaw.
+      $settings['settings']['ruleSet'] = array( array( 'code' => 'ALL', 'regions' => array() ) );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array(
+          'target_countries' => '[]',
+          'status'           => 1,
+          'banner_default'   => 1,
+          'settings'         => wp_json_encode( $settings ),
+        ),
+        array( 'banner_id' => 1 )
+      );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'target_countries' => '[]', 'status' => 0 ),
+        array( 'banner_id' => 2 )
+      );
+      $ctrl = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance();
+      $ctrl->delete_cache();
+      $before = $ctrl->has_country_dependent_banners();
+
+      // Now flip ruleSet[0].code to a country code on the active banner.
+      $settings['settings']['ruleSet'] = array( array( 'code' => 'IT', 'regions' => array() ) );
+      $wpdb->update( $wpdb->prefix . 'faz_banners',
+        array( 'settings' => wp_json_encode( $settings ) ),
+        array( 'banner_id' => 1 )
+      );
+      $ctrl->delete_cache();
+      $after = $ctrl->has_country_dependent_banners();
+
+      echo wp_json_encode( array( 'before' => $before, 'after' => $after ) );
+    `).trim();
+
+    const data = JSON.parse(result);
+    expect(data.before, 'all banners with code=ALL → output is country-independent').toBe(false);
+    expect(data.after, "ruleSet code != 'ALL' makes output country-dependent (legacy geo gate)").toBe(true);
+  });
 });

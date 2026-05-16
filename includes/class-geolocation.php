@@ -77,6 +77,44 @@ class Geolocation {
 	}
 
 	/**
+	 * Resolve the visitor country with the public filter contract applied.
+	 *
+	 * This is the country signal used for banner selection. It intentionally
+	 * re-validates after `faz_visitor_country` so test fixtures and trusted
+	 * deployments can override the value without letting malformed output route
+	 * into an arbitrary banner bucket.
+	 *
+	 * @since 1.13.18
+	 * @return string Upper-case ISO 3166-1 alpha-2 country code, or empty string.
+	 */
+	public static function get_visitor_country() {
+		$country = '';
+		if (
+			apply_filters( 'faz_trust_cf_ipcountry_header', false )
+			&& isset( $_SERVER['HTTP_CF_IPCOUNTRY'] )
+		) {
+			$code = strtoupper( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) );
+			if ( self::is_valid_country_code( $code ) && 'XX' !== $code ) {
+				$country = $code;
+			}
+		}
+		if ( '' === $country ) {
+			$country = self::get_country();
+		}
+		$country = is_string( $country ) ? strtoupper( trim( $country ) ) : '';
+		if ( ! self::is_valid_country_code( $country ) ) {
+			$country = '';
+		}
+
+		$filtered = (string) apply_filters( 'faz_visitor_country', $country );
+		$filtered = strtoupper( trim( $filtered ) );
+		if ( ! self::is_valid_country_code( $filtered ) ) {
+			return '';
+		}
+		return $filtered;
+	}
+
+	/**
 	 * Get the client's real IP address.
 	 *
 	 * @return string

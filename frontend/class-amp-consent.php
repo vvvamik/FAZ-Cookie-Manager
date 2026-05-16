@@ -14,6 +14,7 @@ namespace FazCookie\Frontend;
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
 use FazCookie\Admin\Modules\Banners\Includes\Controller;
+use FazCookie\Includes\Geolocation;
 
 /**
  * AMP consent integration.
@@ -158,7 +159,7 @@ class AMP_Consent {
 			return false;
 		}
 
-		$banner = Controller::get_instance()->get_active_banner();
+		$banner = $this->get_active_banner();
 		if ( false === $banner ) {
 			$cached = false;
 			return false;
@@ -246,8 +247,8 @@ class AMP_Consent {
 			return;
 		}
 
-		// Load the active banner via the existing controller.
-		$banner = Controller::get_instance()->get_active_banner();
+		// Load the same country-aware banner used by the classic frontend.
+		$banner = $this->get_active_banner();
 		if ( false === $banner ) {
 			return;
 		}
@@ -338,5 +339,15 @@ class AMP_Consent {
 			</div>
 		</amp-consent>
 		<?php
+	}
+
+	/**
+	 * Return the active banner resolved for the current visitor country.
+	 *
+	 * @return \FazCookie\Admin\Modules\Banners\Includes\Banner|false
+	 */
+	private function get_active_banner() {
+		$country = Geolocation::get_visitor_country();
+		return Controller::get_instance()->get_active_banner_for_country( $country );
 	}
 }
