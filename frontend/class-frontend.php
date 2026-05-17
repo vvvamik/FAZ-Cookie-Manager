@@ -690,28 +690,65 @@ class Frontend {
 		if ( empty( $rules ) ) {
 			return false;
 		}
-		$rule = $rules[0];
-		$code = isset( $rule['code'] ) ? strtoupper( $rule['code'] ) : 'ALL';
 
-		// ALL = show banner worldwide.
-		if ( 'ALL' === $code ) {
-			return false;
+		// Iterate every rule, NOT just $rules[0] — mirrors the iteration in
+		// Controller::has_country_dependent_banners(). The banner is shown
+		// (is_geo_blocked() returns false) when ANY rule matches the
+		// visitor's country; only when no rule matches do we block.
+		// Without this, a ruleSet like [{code:ALL}, {code:US}] would emit
+		// no-cache headers but the runtime check on $rules[0] only would
+		// still let the first rule decide, asymmetrically.
+		$country = $this->get_visitor_country();
+		foreach ( $rules as $rule ) {
+			if ( ! is_array( $rule ) ) {
+				continue;
+			}
+			if ( $this->rule_matches_visitor( $rule, $country ) ) {
+				return false;
+			}
 		}
 
-		$country = $this->get_visitor_country();
-		// If we can't detect the country, show the banner (safe default).
+		// No rule matched. Safe default: if we couldn't detect the country
+		// at all, show the banner — losing the geo signal must not silently
+		// hide a consent surface.
 		if ( empty( $country ) ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Whether $rule (a single ruleSet entry) matches a visitor in $country.
+	 *
+	 * ALL matches any visitor (including '' when country detection failed).
+	 * EU / US / OTHER match against the corresponding region set and require
+	 * a resolved country code; unknown country yields no match for those.
+	 *
+	 * @since 1.14.0
+	 * @param array  $rule    A single entry from settings.ruleSet.
+	 * @param string $country ISO-3166 alpha-2 country code, '' if unknown.
+	 * @return bool
+	 */
+	private function rule_matches_visitor( $rule, $country ) {
+		$code = isset( $rule['code'] ) ? strtoupper( (string) $rule['code'] ) : 'ALL';
+
+		if ( 'ALL' === $code ) {
+			return true;
+		}
+
+		// EU / US / OTHER all need a resolved visitor country to match.
+		if ( '' === $country ) {
 			return false;
 		}
 
 		switch ( $code ) {
 			case 'EU':
-				return ! in_array( $country, Geolocation::$eu_countries, true );
+				return in_array( $country, Geolocation::$eu_countries, true );
 			case 'US':
-				return 'US' !== $country;
+				return 'US' === $country;
 			case 'OTHER':
 				$regions = isset( $rule['regions'] ) ? array_map( 'strtoupper', (array) $rule['regions'] ) : array();
-				return ! in_array( $country, $regions, true );
+				return in_array( $country, $regions, true );
 			default:
 				return false;
 		}

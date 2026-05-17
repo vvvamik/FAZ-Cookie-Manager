@@ -275,21 +275,29 @@ test.describe('F043 — fazDsarConfig.nameLabel / emailLabel / typeLabel are pre
     // can take longer than 150ms to populate.
     const notice = page.locator('.faz-dsar-notice');
     await expect(notice).toBeVisible();
-    await expect(notice, 'error must not contain "undefined" as a field label (F043)').not.toContainText('undefined');
 
     // At least one of the three localized labels must appear in the error text.
     const labelValues = [labels.nameLabel, labels.emailLabel, labels.typeLabel].filter(Boolean);
     expect(labelValues.length, 'at least one localized label must be supplied by wp_localize_script').toBeGreaterThan(0);
 
-    // Poll until the localized label shows up — `expect.poll` is the Playwright
-    // idiom for "this asynchronous value should match within a timeout window".
+    // Poll until the FINAL text is populated (localized label present) AND
+    // contains no "undefined". The original ordering ran the `undefined`
+    // check before the poll, so an early-visible notice that later became
+    // "Name, undefined, Type" would still pass — combining both predicates
+    // inside the poll closes that race window.
     await expect.poll(async () => {
       const text = (await notice.textContent()) ?? '';
-      return labelValues.some((label) => text.includes(label));
+      const hasLabel = labelValues.some((label) => text.includes(label));
+      return hasLabel && !text.includes('undefined');
     }, {
-      message: 'error text must include at least one of the localized labels',
+      message: 'error text must include at least one localized label AND must not contain "undefined" (F043)',
       timeout: 10_000,
     }).toBe(true);
+
+    // Final asserting snapshot (after the poll has converged) so the
+    // failure mode for "text never converged" is the poll message above
+    // rather than a confusing two-step trace.
+    await expect(notice, 'error must not contain "undefined" as a field label (F043)').not.toContainText('undefined');
 
     expect(blocker.wasCalled(), 'no DSAR submit AJAX call for a validation-failed form').toBe(false);
     await blocker.restore();
