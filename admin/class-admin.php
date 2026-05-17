@@ -82,6 +82,17 @@ class Admin {
 		add_action( 'activated_plugin', array( $this, 'handle_activation_redirect' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'deregister_api_fetch' ), 0 );
 		add_filter( 'admin_body_class', array( $this, 'admin_body_classes' ) );
+		// Issue #107 — defensive guard for the WP-core wp-auth-check JS error
+		// ("Cannot read properties of undefined (reading 'hasClass')") that
+		// fires on FAZ admin pages whose custom-rendered template can race
+		// the core script's expectation of #wp-auth-check-wrap being in the
+		// DOM. Inject an empty placeholder when missing — the core script's
+		// jQuery selector then resolves cleanly and the warning surface
+		// stays available. Override via the existing `wp_auth_check_load`
+		// filter if a site prefers to disable wp-auth-check on FAZ pages
+		// entirely. Compatible with ClassicPress 1.x (admin_print_footer_scripts
+		// is a WP 2.x action, no WP 6.x-only API used).
+		add_action( 'admin_print_footer_scripts', array( $this, 'ensure_wp_auth_check_wrap' ), 1 );
 		add_action( 'admin_notices', array( $this, 'woocommerce_compat_notice' ) );
 		add_action( 'admin_notices', array( $this, 'cookie_definitions_notice' ) );
 		add_action( 'admin_notices', array( $this, 'scheduled_scan_notice' ) );
@@ -263,6 +274,36 @@ class Admin {
 	 *
 	 * @return void
 	 */
+	/**
+	 * Inject an empty #wp-auth-check-wrap placeholder when the WP-core
+	 * `wp_auth_check_html` action did not render one. WordPress'
+	 * `wp-auth-check.min.js` calls `.hasClass()` on the result of a
+	 * selector that returns undefined when the wrap is missing — fires
+	 * the console TypeError reported in issue #107 on FAZ admin pages.
+	 *
+	 * The placeholder is empty + display:none; the real wrap (if WP ever
+	 * renders it later in the same request) is appended after and its
+	 * markup is independent. ClassicPress 1.x supports both `wp_auth_check`
+	 * and the placeholder div pattern.
+	 *
+	 * @return void
+	 */
+	public function ensure_wp_auth_check_wrap() {
+		if ( false === faz_is_admin_page() ) {
+			return;
+		}
+		if ( ! function_exists( 'wp_script_is' ) || ! wp_script_is( 'wp-auth-check', 'enqueued' ) ) {
+			return;
+		}
+		// Output a no-op placeholder. The id selector is what the core
+		// script reads; the rest of the markup (#wp-auth-check, .form,
+		// the iframe) is rendered by the core wp_auth_check_html action
+		// itself when present. The placeholder is harmless if the real
+		// wrap is also present — wp-auth-check.js only reads the first
+		// match.
+		echo '<div id="wp-auth-check-wrap" class="hidden" style="display:none" aria-hidden="true"></div>';
+	}
+
 	public function deregister_api_fetch() {
 		if ( false === faz_is_admin_page() || ! $this->is_classicpress() ) {
 			return;

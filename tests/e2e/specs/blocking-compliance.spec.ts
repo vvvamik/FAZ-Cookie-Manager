@@ -3,7 +3,6 @@ import { expect, test } from '../fixtures/wp-fixture';
 import { clickFirstVisible } from '../utils/ui';
 import { fazApiGet, fazApiPost, openSettingsPage, type FazApiResponse } from '../utils/faz-api';
 import {
-  activatePlugins,
   deactivatePluginsExcept,
   enableProviderMatrixCustomScenario,
   ensureFixturePlugin,
@@ -294,9 +293,11 @@ test.describe('Blocking compliance coverage', () => {
   // declaration here — that's why the afterAll was throwing
   // `ReferenceError: initialActivePlugins is not defined`.
   let initialActivePlugins: string[] = [];
+  let initialActivePluginFiles: string[] = [];
 
   test.beforeAll(async () => {
     initialActivePlugins = listActivePlugins();
+    initialActivePluginFiles = JSON.parse(wpEval(`echo wp_json_encode( array_values( (array) get_option( 'active_plugins', array() ) ) );`));
     deactivatePluginsExcept([
       'faz-cookie-manager',
       'faz-e2e-provider-matrix',
@@ -321,14 +322,19 @@ test.describe('Blocking compliance coverage', () => {
   });
 
   test.afterAll(async () => {
-    const currentlyActive = new Set(listActivePlugins());
-    const toActivate = initialActivePlugins.filter((slug) => !currentlyActive.has(slug));
-
-    if (toActivate.length > 0) {
-      activatePlugins(toActivate, { tolerateFailures: true });
-    }
-    // Deactivate everything that wasn't originally active.
-    deactivatePluginsExcept(initialActivePlugins);
+    const encoded = JSON.stringify(initialActivePluginFiles);
+    wpEval(`
+      $plugins = json_decode( '${encoded.replace(/'/g, "\\'")}', true );
+      if ( ! is_array( $plugins ) ) {
+        $plugins = array();
+      }
+      $plugins = array_values( array_filter( $plugins, function ( $plugin ) {
+        return is_string( $plugin ) && file_exists( WP_PLUGIN_DIR . '/' . $plugin );
+      } ) );
+      update_option( 'active_plugins', $plugins );
+      delete_site_transient( 'update_plugins' );
+      wp_cache_delete( 'plugins', 'plugins' );
+    `);
   });
 
   test.beforeEach(async () => {

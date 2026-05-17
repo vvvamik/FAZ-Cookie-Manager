@@ -49,6 +49,46 @@ async function globalSetup(): Promise<void> {
     try {
       wpEval(`
         global $wpdb;
+        $category_controller = \\FazCookie\\Admin\\Modules\\Cookies\\Includes\\Category_Controller::get_instance();
+        $cookie_controller = \\FazCookie\\Admin\\Modules\\Cookies\\Includes\\Cookie_Controller::get_instance();
+        $category_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}faz_cookie_categories" );
+        if ( 0 === $category_count && method_exists( $category_controller, 'reinstall' ) ) {
+          $category_controller->reinstall();
+        }
+        $analytics_id = (int) $wpdb->get_var(
+          $wpdb->prepare(
+            "SELECT category_id FROM {$wpdb->prefix}faz_cookie_categories WHERE slug = %s",
+            'analytics'
+          )
+        );
+        if ( $analytics_id > 0 ) {
+          $category_cookie_count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+              "SELECT COUNT(*) FROM {$wpdb->prefix}faz_cookies WHERE category = %d",
+              $analytics_id
+            )
+          );
+          if ( 0 === $category_cookie_count ) {
+            $now = current_time( 'mysql' );
+            $wpdb->insert( $wpdb->prefix . 'faz_cookies', array(
+              'name'          => 'faz_e2e_a11y_probe',
+              'slug'          => 'faz-e2e-a11y-probe',
+              'description'   => wp_json_encode( array( 'en' => 'E2E accessibility probe cookie.' ) ),
+              'duration'      => wp_json_encode( array( 'en' => 'Session' ) ),
+              'domain'        => '127.0.0.1',
+              'category'      => $analytics_id,
+              'type'          => 'HTTP',
+              'discovered'    => 0,
+              'url_pattern'   => '',
+              'meta'          => wp_json_encode( array() ),
+              'date_created'  => $now,
+              'date_modified' => $now,
+            ) );
+          }
+        }
+        $category_controller->delete_cache();
+        $cookie_controller->delete_cache();
+
         $controller = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance();
         $banner = $controller->get_active_banner();
         if ( $banner ) {

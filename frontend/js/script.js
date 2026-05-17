@@ -167,10 +167,19 @@ const _FAZ_SCOPE_LAW_KEY = "__scope.law";
 // only themselves), but cheap to implement once and adds accountability
 // integrity for controllers running in scrutinised compliance contexts.
 const _FAZ_SCOPE_FP_KEY = "__scope.fp";
+function _fazStrictScopeFp() {
+    return !!(_fazStore && _fazStore._strictScopeFp);
+}
 function _fazReadScopedCookieValue(key, legacyKey) {
     // Pre-CR-10-fix cookies wrote the unprefixed key. Honour them on read
     // so a returning visitor isn't invalidated just because we renamed
-    // the storage slot.
+    // the storage slot — UNLESS the admin has opted into strict-
+    // fingerprint mode (issue #106 / 1.16.0 planned default flip), in
+    // which case the legacy fallback is bypassed and any cookie missing
+    // __scope.fp is treated as an upgrade case (handled below).
+    if (_fazStrictScopeFp()) {
+        return fazcookieConsentMap[key] || "";
+    }
     return (
         fazcookieConsentMap[key]
         || (legacyKey ? fazcookieConsentMap[legacyKey] : "")
@@ -193,6 +202,12 @@ function _fazConsentScopeChanged() {
     const storedLaw = _fazReadScopedCookieValue(_FAZ_SCOPE_LAW_KEY, "law");
     const storedFp = fazcookieConsentMap[_FAZ_SCOPE_FP_KEY] || "";
     const currentFp = _fazCurrentScopeFingerprint();
+    // Strict mode (issue #106): when the admin has opted in via
+    // `faz_strict_scope_fingerprint`, treat a missing __scope.fp as
+    // "no integrity signal" → invalidate so the visitor is re-prompted
+    // with a freshly-signed cookie. Pre-1.14.0 visitors get re-prompted
+    // ONE TIME after enabling strict mode, then never again.
+    if (_fazStrictScopeFp() && !storedFp) return true;
     // Pre-1.14.0 cookies have no scope keys — treat that as
     // "upgrade case, no scope info known" and let the existing consent
     // stand. Without this guard, every returning visitor on an install

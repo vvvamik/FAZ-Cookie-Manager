@@ -1063,6 +1063,20 @@ class Frontend {
 			// 32 hex chars — enough collision resistance for an integrity
 			// check, short enough to stay light in the cookie.
 			'_scopeFingerprint'  => substr( wp_hash( $banner->get_slug() . '|' . $banner->get_law(), 'auth' ), 0, 32 ),
+			/**
+			 * Strict-fingerprint mode (issue #106).
+			 *
+			 * When the admin returns true via the
+			 * `faz_strict_scope_fingerprint` filter, the JS scope check
+			 * ignores the legacy unprefixed `banner` / `law` cookie keys
+			 * and requires `__scope.fp` to match the server-published
+			 * fingerprint. Cookies written by pre-1.14.0 / fallback-only
+			 * builds are then treated as invalid scope info → safe
+			 * re-prompt. Default off (back-compat); planned default
+			 * flip in 1.16.0. Compatible with ClassicPress 1.x (uses
+			 * `apply_filters` only, no WP 6.x-only APIs).
+			 */
+			'_strictScopeFp'     => (bool) apply_filters( 'faz_strict_scope_fingerprint', false ),
 			'_rootDomain'   => $this->get_cookie_domain(),
 			'_block'        => true,
 			'_showBanner'   => true,

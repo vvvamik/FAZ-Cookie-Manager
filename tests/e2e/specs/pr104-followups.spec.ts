@@ -125,6 +125,82 @@ test.describe('PR104-FU — delete hardening', () => {
     expect(Number(data.row_count), 'response body reports >=1 row affected — frontend uses this').toBeGreaterThanOrEqual(1);
     expect(data.still_there, 'banner row is gone from the DB after the DELETE').toBe(0);
   });
+
+  test('DELETE /banners/{id} promotes a fallback when the deleted row was the sole default', () => {
+    const result = wpEval(`
+      global $wpdb;
+      $table = $wpdb->prefix . 'faz_banners';
+      $admin_ids = get_users( array( 'role' => 'administrator', 'number' => 1, 'fields' => 'ids' ) );
+      wp_set_current_user( ! empty( $admin_ids ) ? (int) $admin_ids[0] : 0 );
+
+      $controller = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance();
+      $active = $controller->get_active_banner();
+      if ( ! $active ) { echo wp_json_encode( array( 'error' => 'NO_ACTIVE' ) ); return; }
+      $active_id = (int) $active->get_id();
+      $now = current_time( 'mysql' );
+
+      $wpdb->insert( $table, array(
+        'name'             => 'PR104-FU delete default',
+        'slug'             => 'pr104-fu-delete-default',
+        'status'           => 1,
+        'settings'         => wp_json_encode( $active->get_settings() ),
+        'contents'         => wp_json_encode( $active->get_contents() ),
+        'banner_default'   => 1,
+        'target_countries' => wp_json_encode( array() ),
+        'priority'         => 0,
+        'date_created'     => $now,
+        'date_modified'    => $now,
+      ) );
+      $default_id = (int) $wpdb->insert_id;
+
+      $wpdb->insert( $table, array(
+        'name'             => 'PR104-FU delete fallback',
+        'slug'             => 'pr104-fu-delete-fallback',
+        'status'           => 1,
+        'settings'         => wp_json_encode( $active->get_settings() ),
+        'contents'         => wp_json_encode( $active->get_contents() ),
+        'banner_default'   => 0,
+        'target_countries' => wp_json_encode( array() ),
+        'priority'         => 0,
+        'date_created'     => $now,
+        'date_modified'    => $now,
+      ) );
+      $fallback_id = (int) $wpdb->insert_id;
+      if ( $default_id <= 0 || $fallback_id <= 0 ) { echo wp_json_encode( array( 'error' => 'SEED_FAIL' ) ); return; }
+
+      $wpdb->query( "UPDATE {$table} SET banner_default = 0" );
+      $wpdb->update( $table, array( 'banner_default' => 1 ), array( 'banner_id' => $default_id ) );
+      $controller->delete_cache();
+
+      $req = new WP_REST_Request( 'DELETE', '/faz/v1/banners/' . $default_id );
+      $req->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+      $req->set_url_params( array( 'id' => $default_id ) );
+      $res = rest_do_request( $req );
+
+      $defaults_after = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE banner_default = 1" );
+      $promoted_id = (int) $wpdb->get_var( "SELECT banner_id FROM {$table} WHERE banner_default = 1 LIMIT 1" );
+      $deleted_still_there = (int) $wpdb->get_var(
+        $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE banner_id = %d", $default_id )
+      );
+
+      $wpdb->delete( $table, array( 'banner_id' => $fallback_id ), array( '%d' ) );
+      $wpdb->query( "UPDATE {$table} SET banner_default = 0" );
+      $wpdb->update( $table, array( 'banner_default' => 1 ), array( 'banner_id' => $active_id ) );
+      $controller->delete_cache();
+
+      echo wp_json_encode( array(
+        'delete_status' => $res->get_status(),
+        'defaults_after' => $defaults_after,
+        'promoted_id' => $promoted_id,
+        'deleted_still_there' => $deleted_still_there,
+      ) );
+    `).trim();
+    const data = JSON.parse(result);
+    expect(data.delete_status, 'DELETE responds 200').toBe(200);
+    expect(data.deleted_still_there, 'deleted default row is gone').toBe(0);
+    expect(data.defaults_after, 'deleting the sole default still leaves exactly one default').toBe(1);
+    expect(data.promoted_id, 'some surviving row was promoted to default').toBeGreaterThan(0);
+  });
 });
 
 /* ================================================================== *

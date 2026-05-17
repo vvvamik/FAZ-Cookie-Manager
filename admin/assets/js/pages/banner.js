@@ -646,15 +646,36 @@
 	function populateGeoTargeting() {
 		if (!bannerData) return;
 		var targets = normaliseCountryCodes(bannerData.target_countries || []);
-		// Region checkboxes: tick a region if every country in its preset is present in the target list.
+		// Region checkboxes: tick a preset only when ALL of its countries are
+		// in the target list. When SOME (but not all) are present, leave the
+		// checkbox unchecked AND set the HTML5 `indeterminate` flag so the
+		// admin sees the partial-match state. collectGeoTargeting() inspects
+		// the same indeterminate flag to avoid re-adding the missing
+		// countries on save — fixes issue #105 (lossy round-trip).
+		// `indeterminate` is purely visual; on user-click the browser clears
+		// it automatically, switching the preset to the explicit "all in"
+		// or "none in" semantic the admin just expressed.
 		var regionInputs = document.querySelectorAll('.faz-b-geo-region');
 		for (var i = 0; i < regionInputs.length; i++) {
 			var key = regionInputs[i].value;
 			var preset = REGION_PRESETS[key] || [];
-			var allIn = preset.length > 0 && preset.every(function (c) { return targets.indexOf(c) !== -1; });
+			var inSet = preset.filter(function (c) { return targets.indexOf(c) !== -1; });
+			var allIn = preset.length > 0 && inSet.length === preset.length;
+			var someIn = !allIn && inSet.length > 0;
 			regionInputs[i].checked = allIn;
+			regionInputs[i].indeterminate = someIn;
+			// Bind a one-time change handler that flips indeterminate off when
+			// the admin actually clicks the checkbox — the browser does this
+			// natively but explicit is safer across older webview engines.
+			if (!regionInputs[i].dataset.fazTriBound) {
+				regionInputs[i].addEventListener('change', function () { this.indeterminate = false; });
+				regionInputs[i].dataset.fazTriBound = '1';
+			}
 		}
-		// Custom field: codes that are NOT covered by any ticked region preset.
+		// Custom field: codes that are NOT covered by any ticked region
+		// preset AND not covered by any indeterminate-preset partial match
+		// (those countries already represent the admin's manual selection,
+		// so they don't need to be duplicated in the custom field).
 		var coveredByRegion = {};
 		for (var j = 0; j < regionInputs.length; j++) {
 			if (!regionInputs[j].checked) continue;
@@ -710,7 +731,13 @@
 		var collected = [];
 		var regionInputs = document.querySelectorAll('.faz-b-geo-region');
 		for (var i = 0; i < regionInputs.length; i++) {
-			if (!regionInputs[i].checked) continue;
+			// Tri-state semantics (issue #105): only checked presets
+			// contribute their full country list. Indeterminate presets
+			// (partial-match populated by populateGeoTargeting) stay out —
+			// their already-present countries are in the custom field, so
+			// adding the full preset back would re-introduce the missing
+			// ones the admin had removed.
+			if (!regionInputs[i].checked || regionInputs[i].indeterminate) continue;
 			var preset = REGION_PRESETS[regionInputs[i].value] || [];
 			collected = collected.concat(preset);
 		}

@@ -289,6 +289,13 @@ class Controller extends Base_Controller {
 	 */
 	public function delete_item( $id ) {
 		global $wpdb;
+		$id          = absint( $id );
+		$was_default = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare(
+				"SELECT `banner_default` FROM `{$wpdb->prefix}faz_banners` WHERE `banner_id` = %d",
+				$id
+			)
+		);
 		$status = $wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prefix . 'faz_banners',
 			array(
@@ -299,6 +306,9 @@ class Controller extends Base_Controller {
 			return false;
 		}
 		if ( $status > 0 ) {
+			if ( 1 === $was_default ) {
+				$this->promote_fallback_default( $id );
+			}
 			$this->delete_cache();
 		}
 		do_action( 'faz_after_update_banner' );
