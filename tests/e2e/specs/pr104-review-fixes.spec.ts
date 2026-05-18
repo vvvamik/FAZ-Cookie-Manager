@@ -705,8 +705,11 @@ test.describe('PR104 — F-UX-02/03/05/06 admin UI elements present', () => {
 });
 
 test.describe('PR104 — F-UX-01 multi-banner switcher', () => {
-  test('switcher dropdown is hidden on a single-banner install and visible with 2+ banners', async ({ page, loginAsAdmin }) => {
-    // Snapshot count BEFORE visiting so we know which branch to assert.
+  test('chip switcher renders one chip per banner; delete button hidden on single-banner install', async ({ page, loginAsAdmin }) => {
+    // Switcher refactored in 1.14.1: <select> dropdown replaced with always-
+    // visible chip buttons; inline rename input moved from #faz-b-name-inline
+    // (toolbar) to #faz-b-name (General tab card). Assertions follow the
+    // new contract.
     const beforeCount = parseInt(wpEval(`
       global $wpdb;
       echo (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}faz_banners" );
@@ -715,37 +718,45 @@ test.describe('PR104 — F-UX-01 multi-banner switcher', () => {
     await loginAsAdmin(page);
     await page.goto(`${WP_BASE}/wp-admin/admin.php?page=faz-cookie-manager-banner`, { waitUntil: 'domcontentloaded' });
 
-    // The switcher container itself is ALWAYS visible (1.14.0+) — it
-    // hosts the inline banner-name rename input which needs to be there
-    // even on single-banner installs. Wait for the async FAZ.get('banners')
-    // call to land before sampling the dropdown.
+    // Switcher container is ALWAYS rendered — the chip row, the "+ New"
+    // button, and the delete button live inside it. Visible on every
+    // multi-banner-aware install.
     const switcher = page.locator('#faz-b-switcher');
     await expect(switcher, 'switcher container is rendered and visible').toBeVisible({ timeout: 10_000 });
 
-    // The DROPDOWN (and the delete button) collapses only when count <= 1.
-    // Wait for the populate cycle (the dropdown only gets options once
-    // FAZ.get('banners') resolves) so the visibility sample is stable.
-    const dropdown = page.locator('#faz-b-switcher-select');
+    // Wait for populateSwitcher() to render one chip per banner row —
+    // chips populate after FAZ.get('banners') resolves.
+    const chips = page.locator('#faz-b-switcher-chips button');
     await page.waitForFunction(
-      () => (document.querySelectorAll('#faz-b-switcher-select option').length > 0)
-        || (document.getElementById('faz-b-switcher-select')?.style.display === 'none'),
-      undefined,
+      (n) => document.querySelectorAll('#faz-b-switcher-chips button').length >= n,
+      Math.max(beforeCount, 1),
       { timeout: 10_000 },
     ).catch(() => {});
 
+    // Headline assertion: chip count matches banner row count.
+    const chipCount = await chips.count();
+    expect(chipCount, 'one chip per banner row').toBe(beforeCount);
+
+    // The rename input moved to the General tab and is bound on page load,
+    // regardless of how many banners exist.
+    await expect(page.locator('#faz-b-name'), 'in-tab rename input exists in the General tab').toBeAttached();
+
     if (beforeCount >= 2) {
-      await expect(dropdown, 'dropdown visible when ≥2 banners exist').toBeVisible();
-      const optionCount = await dropdown.locator('option').count();
-      expect(optionCount, 'dropdown lists every banner row').toBeGreaterThanOrEqual(2);
+      // Multi-banner install: every chip carries the banner_id in a
+      // data attribute so deep-link navigation is deterministic.
+      const ids = await chips.evaluateAll((els) =>
+        els.map((el) => Number((el as HTMLElement).dataset.bannerId || 0)),
+      );
+      expect(ids.every((id) => id > 0), 'every chip exposes a positive data-banner-id').toBe(true);
+      // Delete button visible whenever count ≥ 2 AND the current banner
+      // isn't the default — assert it's at least attached (visibility
+      // depends on whether we're editing the default banner, which we
+      // can't guarantee from outside).
+      await expect(page.locator('#faz-b-switcher-delete'), 'delete button is attached on multi-banner installs').toBeAttached();
     } else {
-      // SINGLE-BANNER install: dropdown collapses, delete button hides.
-      // Without this branch (pre-fix) the test reported "passed" without
-      // actually validating the hidden state.
-      await expect(dropdown, 'dropdown hidden on a single-banner install').toBeHidden();
-      const delBtn = page.locator('#faz-b-switcher-delete');
-      await expect(delBtn, 'delete button hidden on a single-banner install').toBeHidden();
-      // The rename input must still be present + visible.
-      await expect(page.locator('#faz-b-name-inline'), 'inline rename input stays visible on single-banner installs').toBeVisible();
+      // SINGLE-BANNER install: delete button is hidden (can't delete the
+      // only row), but the chip for the lone banner is still rendered.
+      await expect(page.locator('#faz-b-switcher-delete'), 'delete button hidden on a single-banner install').toBeHidden();
     }
   });
 });
