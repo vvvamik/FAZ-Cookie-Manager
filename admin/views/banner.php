@@ -10,18 +10,18 @@ defined( 'ABSPATH' ) || exit;
 
 <div id="faz-banner">
 
-	<!-- Banner switcher — populated by banner.js from /faz/v1/banners. Shown
-	     whenever the install has more than one banner row (multi-banner
-	     geo-routing introduced in 1.14.0). The "+ New banner" button POSTs
-	     a clone of the current banner and reloads the page on the new id.
-	     The active banner_id is taken from the ?banner_id= query string
-	     and falls back to the system-default banner when absent. -->
+	<!-- Banner switcher (1.14.1+) — chip-style list of every banner row,
+	     always visible (replaces the collapsed <select> dropdown used in
+	     1.14.0). Populated by banner.js from /faz/v1/banners. Active chip
+	     uses the dark-fill primary state; clicking any other chip
+	     deep-links to its banner_id. The rename input that used to live
+	     here moved into the General tab (less visual noise + clearer
+	     scoping: "I'm editing this banner, here's its name"). -->
 	<div id="faz-b-switcher" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;font-size:13px;flex-wrap:wrap;">
-		<label for="faz-b-name-inline" style="color:#6b7280;white-space:nowrap;">
-			<?php esc_html_e( 'Banner:', 'faz-cookie-manager' ); ?>
-		</label>
-		<input type="text" id="faz-b-name-inline" class="faz-input faz-input-sm" style="width:200px;padding:.25rem .5rem;font-size:13px;" placeholder="<?php esc_attr_e( 'Banner name', 'faz-cookie-manager' ); ?>" title="<?php esc_attr_e( 'Press Enter or click outside to save the name.', 'faz-cookie-manager' ); ?>" />
-		<select id="faz-b-switcher-select" class="faz-input faz-input-sm" style="display:none;width:auto;max-width:200px;padding:.25rem .5rem;font-size:13px;" title="<?php esc_attr_e( 'Switch to another banner', 'faz-cookie-manager' ); ?>"></select>
+		<span style="color:#6b7280;white-space:nowrap;font-weight:500;">
+			<?php esc_html_e( 'Banners:', 'faz-cookie-manager' ); ?>
+		</span>
+		<div id="faz-b-switcher-chips" style="display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;"></div>
 		<button type="button" class="faz-btn faz-btn-sm faz-btn-secondary" id="faz-b-switcher-new" title="<?php esc_attr_e( 'Create a new banner', 'faz-cookie-manager' ); ?>" style="padding:.25rem .6rem;font-size:13px;line-height:1;">
 			+ <?php esc_html_e( 'New', 'faz-cookie-manager' ); ?>
 		</button>
@@ -30,18 +30,81 @@ defined( 'ABSPATH' ) || exit;
 		</button>
 	</div>
 
+	<!--
+	     Tab order (1.14.1+): Geo Targeting promoted to 2nd position so the
+	     "WHO sees this banner" question is answered immediately after the
+	     "is it on/off" toggle, BEFORE the admin starts customising content
+	     and colours for a banner they may not have correctly targeted yet.
+	     Content / Colours / Buttons / Preference Center / Advanced follow
+	     in customisation-frequency order. The data-tab slugs are unchanged
+	     so deep-links (#tab-geo, etc.) keep working.
+	-->
 	<div class="faz-tabs" id="faz-banner-tabs">
 		<button class="faz-tab active" data-tab="general"><?php esc_html_e( 'General', 'faz-cookie-manager' ); ?></button>
+		<button class="faz-tab" data-tab="geo"><?php esc_html_e( 'Geo Targeting', 'faz-cookie-manager' ); ?></button>
 		<button class="faz-tab" data-tab="content"><?php esc_html_e( 'Content', 'faz-cookie-manager' ); ?></button>
 		<button class="faz-tab" data-tab="colours"><?php esc_html_e( 'Colours', 'faz-cookie-manager' ); ?></button>
 		<button class="faz-tab" data-tab="buttons"><?php esc_html_e( 'Buttons', 'faz-cookie-manager' ); ?></button>
 		<button class="faz-tab" data-tab="preferences"><?php esc_html_e( 'Preference Center', 'faz-cookie-manager' ); ?></button>
 		<button class="faz-tab" data-tab="advanced"><?php esc_html_e( 'Advanced', 'faz-cookie-manager' ); ?></button>
-		<button class="faz-tab" data-tab="geo"><?php esc_html_e( 'Geo Targeting', 'faz-cookie-manager' ); ?></button>
 	</div>
+
+	<!--
+	     Missing-banner notice. Shown by banner.js when GET /faz/v1/banners/{id}
+	     returns 404 (i.e. the ?banner_id= in the URL points to a row that no
+	     longer exists — e.g. after a banner deletion or an old bookmark from
+	     before the auto-increment bug fix in 1.14.1). The JS hides the tabs +
+	     editor below it and surfaces a CTA that links back to the default
+	     banner so the admin doesn't see an empty / half-rendered editor.
+	-->
+	<div id="faz-banner-missing" class="faz-card" style="display:none;border-color:#fbbf24;background:#fffbeb;">
+		<div class="faz-card-body" style="display:flex;flex-direction:column;gap:.75rem;">
+			<h3 style="margin:0;color:#92400e;">
+				<?php esc_html_e( 'This banner does not exist', 'faz-cookie-manager' ); ?>
+			</h3>
+			<p style="margin:0;color:#78350f;">
+				<?php
+				printf(
+					/* translators: %s: HTML <code> with the banner id from the URL. */
+					esc_html__( 'Banner ID %s was not found. It may have been deleted, or the link you followed is from an older version of the plugin.', 'faz-cookie-manager' ),
+					'<code id="faz-banner-missing-id" style="background:#fef3c7;padding:.1rem .35rem;border-radius:3px;">—</code>'
+				);
+				?>
+			</p>
+			<div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+				<a href="#" id="faz-banner-missing-default" class="faz-btn faz-btn-primary">
+					<?php esc_html_e( 'Open the default banner', 'faz-cookie-manager' ); ?>
+				</a>
+				<a href="<?php echo esc_url( admin_url( 'admin.php?page=faz-cookie-manager' ) ); ?>" class="faz-btn faz-btn-secondary">
+					<?php esc_html_e( 'Back to dashboard', 'faz-cookie-manager' ); ?>
+				</a>
+			</div>
+		</div>
+	</div>
+	<div id="faz-banner-body">
 
 	<!-- ─── General ─────────────────────────────────────── -->
 	<div id="tab-general" class="faz-tab-panel active">
+
+		<!--
+		     Banner name (1.14.1+) — moved here from the toolbar input that
+		     used to live inside #faz-b-switcher. The toolbar version was
+		     always visible and edited the *current* banner regardless of
+		     where the admin was on the page, which was confusing when the
+		     install had two banners with the same name. Keeping it here
+		     makes the scoping explicit: this is the name of THE banner
+		     you are currently editing, and you change it from inside its
+		     own General tab.
+		-->
+		<div class="faz-card">
+			<div class="faz-card-header"><h3><?php esc_html_e( 'Banner Name', 'faz-cookie-manager' ); ?></h3></div>
+			<div class="faz-card-body">
+				<div class="faz-form-group">
+					<input type="text" class="faz-input" id="faz-b-name" placeholder="<?php esc_attr_e( 'e.g. GDPR — EU + UK', 'faz-cookie-manager' ); ?>" maxlength="120" style="max-width:480px;" />
+					<div class="faz-help"><?php esc_html_e( 'Used to tell your banners apart in the switcher above. Not shown to visitors.', 'faz-cookie-manager' ); ?></div>
+				</div>
+			</div>
+		</div>
 
 		<div class="faz-card">
 			<div class="faz-card-header"><h3><?php esc_html_e( 'Banner Status', 'faz-cookie-manager' ); ?></h3></div>
@@ -807,4 +870,5 @@ defined( 'ABSPATH' ) || exit;
 			<span class="faz-save-status" id="faz-b-status"></span>
 		</div>
 	</div>
+	</div><!-- /#faz-banner-body -->
 </div>

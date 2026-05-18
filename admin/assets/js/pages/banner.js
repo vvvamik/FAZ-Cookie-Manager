@@ -240,9 +240,56 @@
 			// Multi-banner switcher (1.14.0+) — list every banner row so
 			// the admin can jump between them via ?banner_id=N.
 			populateSwitcher();
-		}).catch(function () {
+		}).catch(function (err) {
+			// Distinguish "the requested ?banner_id= row doesn't exist" (the
+			// /banners/{id} endpoint returns 404 with code=fazcookie_rest_invalid_id)
+			// from generic load failures (5xx, network). The former is the
+			// common case after a banner deletion or an old bookmark from
+			// before the 1.14.1 auto-increment fix — surface it in-page with
+			// a recoverable CTA instead of a transient toast.
+			var isMissing = !!err && (
+				err.code === 'fazcookie_rest_invalid_id'
+				|| err.code === 'rest_no_route'
+				|| (err.data && err.data.status === 404)
+			);
+			if ( isMissing ) {
+				showMissingBannerNotice(bannerId);
+				return;
+			}
 			FAZ.notify(__('banner.loadFailed', 'Failed to load banner settings.'), 'error');
 		});
+	}
+
+	// Render the "this banner does not exist" notice and hide the editor.
+	// Looks up the actual default banner so the recovery link can deep-link
+	// to a row that exists, instead of guessing id=1.
+	function showMissingBannerNotice(badId) {
+		var notice  = document.getElementById('faz-banner-missing');
+		var body    = document.getElementById('faz-banner-body');
+		var idEl    = document.getElementById('faz-banner-missing-id');
+		var tabs    = document.getElementById('faz-banner-tabs');
+		var switcher = document.getElementById('faz-b-switcher');
+		var cta     = document.getElementById('faz-banner-missing-default');
+		if (!notice) return;
+
+		notice.style.display = '';
+		if (body)    body.style.display = 'none';
+		if (tabs)    tabs.style.display = 'none';
+		if (switcher) switcher.style.display = 'none';
+		if (idEl) idEl.textContent = '#' + String(badId);
+
+		// Build the recovery link. Default target: the existing banner_default=1
+		// row. Falls back to the first available banner. Final fallback: the
+		// page without banner_id so the server-side default kicks in.
+		var base = window.location.href.split('?')[0];
+		var page = (window.location.search.match(/page=([^&]+)/) || [null, 'faz-cookie-manager-banner'])[1];
+		var fallbackUrl = base + '?page=' + encodeURIComponent(page);
+		if (cta) cta.href = fallbackUrl;
+		FAZ.get('banners').then(function (rows) {
+			if (!Array.isArray(rows) || !rows.length) return;
+			var pick = rows.filter(function (b) { return Number(b['default']) === 1; })[0] || rows[0];
+			if (pick && cta) cta.href = fallbackUrl + '&banner_id=' + Number(pick.id);
+		}).catch(function () { /* keep the bare-page fallback */ });
 	}
 
 	// ── Multi-banner switcher (1.14.0+) ─────────────────────────────────
@@ -252,34 +299,48 @@
 	// last remaining row).
 	function populateSwitcher() {
 		var wrap    = document.getElementById('faz-b-switcher');
-		var select  = document.getElementById('faz-b-switcher-select');
+		var chips   = document.getElementById('faz-b-switcher-chips');
 		var newBtn  = document.getElementById('faz-b-switcher-new');
 		var delBtn  = document.getElementById('faz-b-switcher-delete');
-		var nameIn  = document.getElementById('faz-b-name-inline');
-		if (!wrap || !select || !newBtn) return;
+		if (!wrap || !chips || !newBtn) return;
 
-		// Populate the inline name input from the current banner so the
-		// admin can rename it directly from the toolbar.
-		if (nameIn && bannerData && typeof bannerData.name === 'string') {
-			nameIn.value = bannerData.name;
+		// Build a single chip element. Stored in a local helper so the
+		// render call site stays narrative — we lay out the chip once,
+		// then iterate once and append.
+		function renderChip(b) {
+			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'faz-switcher-chip';
+			btn.dataset.bannerId = String(b.id);
+			var isActive = Number(b.id) === Number(bannerId);
+			btn.style.padding = '.25rem .65rem';
+			btn.style.fontSize = '13px';
+			btn.style.lineHeight = '1.4';
+			btn.style.borderRadius = '999px';
+			btn.style.border = '1px solid ' + (isActive ? '#1f2937' : '#d1d5db');
+			btn.style.background = isActive ? '#1f2937' : '#fff';
+			btn.style.color = isActive ? '#fff' : '#374151';
+			btn.style.cursor = isActive ? 'default' : 'pointer';
+			btn.style.fontWeight = isActive ? '600' : '400';
+			btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+			var label = b.name || ('Banner #' + b.id);
+			if (Number(b['default']) === 1) label = '★ ' + label;
+			if (Number(b.status) !== 1) label += ' (' + __('banner.inactive', 'inactive') + ')';
+			btn.textContent = label;
+			if (!isActive) {
+				btn.addEventListener('click', function () {
+					var base = window.location.href.split('?')[0];
+					var page = (window.location.search.match(/page=([^&]+)/) || [null, 'faz-cookie-manager-banner'])[1];
+					window.location.href = base + '?page=' + encodeURIComponent(page) + '&banner_id=' + Number(b.id);
+				});
+			}
+			return btn;
 		}
 
 		FAZ.get('banners').then(function (data) {
 			var rows = Array.isArray(data) ? data : [];
-			// Toolbar is always visible (single-banner installs still need
-			// the rename input). Only the dropdown collapses on solo rows.
-			select.style.display = rows.length <= 1 ? 'none' : '';
-			while (select.firstChild) { select.removeChild(select.firstChild); }
-			rows.forEach(function (b) {
-				var opt = document.createElement('option');
-				opt.value = String(b.id);
-				var label = b.name || ('Banner #' + b.id);
-				if (Number(b['default']) === 1) label += ' ★';
-				if (Number(b.status) !== 1) label += ' (' + __('banner.inactive', 'inactive') + ')';
-				opt.textContent = label;
-				if (Number(b.id) === Number(bannerId)) opt.selected = true;
-				select.appendChild(opt);
-			});
+			while (chips.firstChild) { chips.removeChild(chips.firstChild); }
+			rows.forEach(function (b) { chips.appendChild(renderChip(b)); });
 			if (delBtn) {
 				var current = rows.filter(function (b) { return Number(b.id) === Number(bannerId); })[0];
 				var canDelete = rows.length > 1 && current && Number(current['default']) !== 1;
@@ -287,9 +348,11 @@
 			}
 		}).catch(function () { /* network glitch — switcher just doesn't appear */ });
 
-		// Inline name editor: PUT the new name on blur or Enter. Skips
-		// when value is unchanged or empty. Updates the local bannerData
-		// so subsequent saves don't revert it.
+		// In-page rename: the input now lives in the General tab as
+		// #faz-b-name (1.14.1+). Bind once per page load. On commit we PUT
+		// the new name, then re-render the chip row so the visible label
+		// updates without a page reload.
+		var nameIn = document.getElementById('faz-b-name');
 		if (nameIn && !nameIn.dataset.fazNameBound) {
 			var commitName = function () {
 				if (!bannerData) return;
@@ -305,13 +368,8 @@
 				}).then(function () {
 					bannerData.name = next;
 					FAZ.notify(__('banner.renamed', 'Banner renamed.'));
-					var opt = select.querySelector('option[value="' + bannerId + '"]');
-					if (opt) {
-						var label = next;
-						if (Number(bannerData['default']) === 1) label += ' ★';
-						if (Number(bannerData.status) !== 1) label += ' (' + __('banner.inactive', 'inactive') + ')';
-						opt.textContent = label;
-					}
+					// Re-render the chip row so the new name is reflected.
+					populateSwitcher();
 				}).catch(function () {
 					FAZ.notify(__('banner.renameFailed', 'Failed to save the new name.'), 'error');
 					nameIn.value = bannerData.name || '';
@@ -324,16 +382,9 @@
 			});
 			nameIn.dataset.fazNameBound = '1';
 		}
-
-		if (!select.dataset.fazSwitcherBound) {
-			select.addEventListener('change', function () {
-				var target = parseInt(select.value, 10);
-				if (!isFinite(target) || target <= 0 || target === bannerId) return;
-				var base = window.location.href.split('?')[0];
-				var page = (window.location.search.match(/page=([^&]+)/) || [null, 'faz-cookie-manager-banner'])[1];
-				window.location.href = base + '?page=' + encodeURIComponent(page) + '&banner_id=' + target;
-			});
-			select.dataset.fazSwitcherBound = '1';
+		// Seed the in-tab rename input from the loaded bannerData.
+		if (nameIn && bannerData && typeof bannerData.name === 'string') {
+			nameIn.value = bannerData.name;
 		}
 		if (!newBtn.dataset.fazSwitcherBound) {
 			newBtn.addEventListener('click', openNewBannerModal);

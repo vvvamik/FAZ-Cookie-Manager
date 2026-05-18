@@ -202,11 +202,29 @@ class Api extends Rest_Controller {
 	 * @return WP_Error|WP_REST_Response
 	 */
 	public function get_item( $request ) {
-		$object = new Banner( (int) $request['id'] );
-		if ( 0 === $object->get_id() ) {
+		global $wpdb;
+		$id = (int) $request['id'];
+		if ( $id <= 0 ) {
 			return new WP_Error( 'fazcookie_rest_invalid_id', __( 'Invalid ID.', 'faz-cookie-manager' ), array( 'status' => 404 ) );
 		}
-		$data = $this->prepare_item_for_response( $object, $request );
+		// The legacy "0 === $object->get_id()" check below couldn't catch a
+		// non-existent row: Banner::__construct unconditionally calls
+		// set_id( $id ) BEFORE attempting the DB read, so the resulting
+		// object always reports the requested id even when the row is gone.
+		// Pre-1.14.1 fix this surfaced as GET /banners/{phantom_id} → 200
+		// with an empty banner — the admin editor would happily render
+		// "Settings" for a row that didn't exist. Replaced with an
+		// explicit existence probe against the faz_banners table.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.SlowDBQuery
+		$exists = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}faz_banners WHERE banner_id = %d",
+			$id
+		) );
+		if ( 0 === $exists ) {
+			return new WP_Error( 'fazcookie_rest_invalid_id', __( 'Banner not found.', 'faz-cookie-manager' ), array( 'status' => 404 ) );
+		}
+		$object = new Banner( $id );
+		$data   = $this->prepare_item_for_response( $object, $request );
 		return rest_ensure_response( $data );
 	}
 
