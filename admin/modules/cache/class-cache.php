@@ -24,8 +24,27 @@ class Cache extends Modules {
 
 	/**
 	 * Constructor.
+	 *
+	 * Cache-service registration runs on `plugins_loaded` so third-party
+	 * cache plugins (LiteSpeed, WP Rocket, W3TC, …) are already loaded
+	 * and their classes are detectable. BUT the FAZ module loader can
+	 * fire AFTER plugins_loaded in REST/admin contexts:
+	 * `Admin::maybe_load_modules` defers module instantiation to
+	 * `rest_api_init`, by which point plugins_loaded has already passed
+	 * and any deferred listener is dead weight. Pre-fix this surfaced on
+	 * prod (fabiodalez.it 2026-05-18, 1.14.1) as "creating/deleting a
+	 * banner doesn't purge LSCache" — Litespeed_Cache::clear_cache was
+	 * never registered as a faz_after_update_banner listener because
+	 * load_services() never fired.
+	 *
+	 * Fix: detect the post-plugins_loaded race and run load_services
+	 * immediately, otherwise queue it as before.
 	 */
 	public function init() {
+		if ( did_action( 'plugins_loaded' ) ) {
+			$this->load_services();
+			return;
+		}
 		add_action( 'plugins_loaded', array( $this, 'load_services' ) );
 	}
 
