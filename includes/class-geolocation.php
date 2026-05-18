@@ -214,12 +214,23 @@ class Geolocation {
 				 * (the fail-open default — banner is shown to everyone).
 				 * Off by default to preserve the CF-first priority order.
 				 *
+				 * F019 fix: third argument is now an HMAC-style hash of
+				 * the visitor IP (via wp_hash with the 'nonce' scheme,
+				 * which uses wp_salt('nonce') — distinct from the
+				 * 'auth' scheme used elsewhere so a salt leak doesn't
+				 * cross-correlate). Third-party plugins hooking this
+				 * filter no longer receive raw PII; they CAN still
+				 * correlate detections of the same client across calls
+				 * (the hash is stable per-IP per-salt) without ever
+				 * seeing the IP itself.
+				 *
 				 * @since 1.14.0
 				 * @param bool   $require_consensus Default false.
 				 * @param array  $votes             Per-source country votes (cf, geoip, php_geoip, mmdb).
-				 * @param string $ip                Visitor IP address.
+				 * @param string $ip_hash           HMAC-style hash of the visitor IP (not the raw IP).
 				 */
-				if ( apply_filters( 'faz_country_detection_consensus', false, $votes, $ip ) ) {
+				$ip_hash = function_exists( 'wp_hash' ) ? wp_hash( (string) $ip, 'nonce' ) : '';
+				if ( apply_filters( 'faz_country_detection_consensus', false, $votes, $ip_hash ) ) {
 					return '';
 				}
 			}

@@ -934,14 +934,25 @@ class Frontend {
 		$regions      = is_array( $regions ) ? $regions : (array) $regions;
 
 		$region_map = array(
+			// F008 fix: align with admin/assets/js/pages/banner.js
+			// REGION_PRESETS.EU which deliberately EXCLUDES GB (UK is its
+			// own preset). The pre-fix table included GB for "consistency
+			// with Geolocation::$eu_countries", but that produced a
+			// silent divergence: a publisher selecting "EU" in the admin
+			// (per-banner target_countries) got a 30-country set without
+			// GB; the same publisher's global Settings → Geolocation →
+			// target_regions=eu got a 31-country set with GB. UK has its
+			// own data-protection regime (UK GDPR) and deserves its own
+			// preset — keep the 'uk' bucket as the canonical home for GB.
+			// Geolocation::$eu_countries is a separate concern (lex
+			// generalis EU+UK shorthand for "is this visitor under any
+			// GDPR-class law") and remains unchanged.
 			'eu' => array(
 				'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
 				'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
 				'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
 				// EEA.
 				'IS', 'LI', 'NO',
-				// UK kept here for consistency with Geolocation::$eu_countries and UK GDPR handling.
-				'GB',
 			),
 			'uk' => array( 'GB' ),
 			'us' => array( 'US' ),

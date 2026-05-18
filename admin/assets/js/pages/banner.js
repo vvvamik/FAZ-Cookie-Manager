@@ -977,7 +977,13 @@
 		// misleadingly suggests something is active. Bind disabled state to
 		// the parent and re-run the binding any time the parent changes.
 		(function bindCloseSubToggle() {
-			var parent = document.getElementById('faz-b-close-toggle');
+			// F001 fix: `faz-b-close-toggle` is the wrapping <label>,
+			// not the <input>. Reading `label.checked` returns undefined,
+			// so the sub-toggle was unconditionally disabled regardless
+			// of parent state. Query the underlying checkbox via a
+			// descendant selector so .checked is a real boolean.
+			var parentLabel = document.getElementById('faz-b-close-toggle');
+			var parent = parentLabel ? parentLabel.querySelector('input[type="checkbox"]') : null;
 			var sub = document.getElementById('faz-b-close-with-reject');
 			var group = document.getElementById('faz-b-close-with-reject-group');
 			if (!parent || !sub) return;

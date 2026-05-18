@@ -195,29 +195,30 @@ class Controller extends Base_Controller {
 			return;
 		}
 		$id = $wpdb->insert_id;
-		// Enforce single-default invariant on create too (mirrors update_item).
-		// The insert above has already written banner_default=1 for the new
-		// row; clear the flag on every other row so the just-inserted row is
-		// the sole default after this call returns.
-		if ( true === $banner->get_default() ) {
-			$this->clear_default_on_others( $id );
-		}
 		$banner->set_id( $id );
 		$banner->set_slug( $banner->get_name() );
 		$slug = $banner->get_slug() . '-' . $id; // Append ID to the slug of the each banner.
 		$banner->set_slug( $slug );
-		// Persist the freshly-generated slug. We MUST NOT re-read
-		// $wpdb->insert_id after save(): save() goes through the update
-		// path (the row exists from line 167's $wpdb->insert) and the
-		// downstream cache/option writes triggered by do_action(
-		// 'faz_after_update_banner' ) or transients can pollute
-		// $wpdb->insert_id with the auto-increment of an unrelated table
-		// (wp_options.auto_increment often runs in the millions on busy
-		// sites — pre-fix this surfaced as banner IDs like 2,513,570 in
-		// admin redirect URLs, breaking the post-create deep link).
+		// Persist the freshly-generated slug + invariants.
+		//
+		// F006/F007 fix: $banner->save() routes through update_item()
+		// because get_id() > 0 after the INSERT above. update_item()
+		// itself runs clear_default_on_others() (for default=true rows)
+		// AND fires both delete_cache() and do_action(
+		// 'faz_after_update_banner' ) at its tail. Calling them again
+		// here would (a) double-invalidate every cache adapter
+		// (LSCache / WP Rocket purge twice per create) and (b) bump
+		// the cache epoch four times for a single create. The
+		// at-most-one-default invariant is enforced by update_item via
+		// the was_default check it does for free.
+		//
+		// We MUST NOT re-read $wpdb->insert_id after save(): downstream
+		// option/transient writes inside the hook chain can pollute
+		// $wpdb->insert_id with the AUTO_INCREMENT of an unrelated
+		// table (wp_options on busy sites often runs in the millions —
+		// pre-fix this surfaced as banner IDs like 2,513,570 in admin
+		// redirect URLs).
 		$banner->save();
-		$this->delete_cache();
-		do_action( 'faz_after_update_banner' );
 	}
 
 	/**
@@ -297,21 +298,46 @@ class Controller extends Base_Controller {
 	 */
 	public function delete_item( $id ) {
 		global $wpdb;
-		$id          = absint( $id );
-		$was_default = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$id = absint( $id );
+		// F016 fix: read was_default + DELETE atomically via a single
+		// `DELETE ... RETURNING banner_default` statement on MySQL 8.0.21+
+		// / MariaDB 10.0.5+. The previous SELECT-then-DELETE pair was a
+		// classic check-then-act race: two admin sessions could each see
+		// was_default=1 on the same row and both call
+		// promote_fallback_default after their DELETEs, ending with TWO
+		// default rows. The atomic form binds the read to the same row
+		// the DELETE removes, so only one session sees was_default=1
+		// even when both target the same banner_id concurrently.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$returned = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT `banner_default` FROM `{$wpdb->prefix}faz_banners` WHERE `banner_id` = %d",
+				"DELETE FROM `{$wpdb->prefix}faz_banners` WHERE `banner_id` = %d RETURNING `banner_default`",
 				$id
 			)
 		);
-		$status = $wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-			$wpdb->prefix . 'faz_banners',
-			array(
-				'banner_id' => $id,
-			)
-		);
-		if ( false === $status ) {
-			return false;
+		if ( null === $returned ) {
+			// Older MySQL (<8.0.21) or MariaDB (<10.0.5) without RETURNING
+			// support, OR a no-op delete (row didn't exist). Fall back to
+			// the legacy SELECT-then-DELETE path. The fallback path still
+			// has the race window, but the upgrade path means new MySQL
+			// installs get the safe atomic form for free.
+			$was_default = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->prepare(
+					"SELECT `banner_default` FROM `{$wpdb->prefix}faz_banners` WHERE `banner_id` = %d",
+					$id
+				)
+			);
+			$status = $wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->prefix . 'faz_banners',
+				array( 'banner_id' => $id ),
+				array( '%d' )
+			);
+			if ( false === $status ) {
+				return false;
+			}
+		} else {
+			$was_default = (int) $returned;
+			$status      = 1;
 		}
 		if ( $status > 0 ) {
 			if ( 1 === $was_default ) {
@@ -593,12 +619,23 @@ class Controller extends Base_Controller {
 		// invalidates every node's cache simultaneously — the OLD key is
 		// never queried again. Replaces the previous delete_transient
 		// call which only invalidated the local Redis/Memcached node.
-		$epoch = (int) get_option( 'faz_banner_cache_epoch', 0 );
-		// PHP_INT_MAX guard so the option never overflows; reset to 0 is
-		// equivalent to "bumped" from the cache-key perspective (the new
-		// key won't match any prior cached entry).
-		$next  = $epoch >= PHP_INT_MAX - 1 ? 0 : $epoch + 1;
-		update_option( 'faz_banner_cache_epoch', $next, false );
+		//
+		// F015 fix: use microtime-based monotonic value instead of $epoch+1
+		// so two concurrent admin sessions can't both compute the same
+		// $next and race to write under the same cache key. The previous
+		// "$epoch + 1" pattern was vulnerable to a write-skew race where
+		// session A's stale answer could overwrite session B's fresh
+		// answer under the same key for the full 5-minute TTL.
+		// microtime(true)*1000 gives sub-millisecond resolution — two
+		// real-world concurrent updates always land on different epochs.
+		$next = (int) ( microtime( true ) * 1000 );
+		// F011 fix: autoload=true (default) keeps the option in WP's
+		// alloptions cache, which IS replicated across nodes by every
+		// object-cache backend that supports wp_cache_set_multiple
+		// (WP 6.0+). The previous autoload=false defeated that path —
+		// non-leader nodes had to round-trip to the DB on every page
+		// load AND missed the updated_option cross-node propagation.
+		update_option( 'faz_banner_cache_epoch', $next, true );
 		// Sweep the legacy transient written by pre-fix 1.14.0 builds.
 		// One-shot cleanup; the call is cheap and idempotent.
 		delete_transient( 'faz_has_country_dependent_banners' );

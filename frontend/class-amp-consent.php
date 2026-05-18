@@ -62,6 +62,28 @@ class AMP_Consent {
 		// the regular banner template and inline styles.
 		add_filter( 'faz_is_amp_request', '__return_true' );
 
+		// F013 fix: AMP pages render through their own template stack
+		// (separate amphtml endpoint URLs, dedicated cache controls). The
+		// regular Frontend::send_geo_cache_headers() listener on
+		// send_headers would catch the HTML response, but only when the
+		// AMP template loads through WP's normal request path AND the
+		// listener fires before AMP-specific output buffers flush. To
+		// guarantee the bypass on country-dependent installs, force the
+		// nocache stack here as well. Idempotent with Frontend's
+		// listener — duplicate headers are harmless; both refer to the
+		// same nocache directive.
+		if ( Controller::get_instance()->has_country_dependent_banners() ) {
+			if ( ! headers_sent() ) {
+				header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
+				header( 'Pragma: no-cache' );
+				header( 'X-LiteSpeed-Cache-Control: no-cache' );
+			}
+			if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+				define( 'DONOTCACHEPAGE', true );
+			}
+			do_action( 'litespeed_control_set_nocache', 'FAZ AMP country-dependent banner' );
+		}
+
 		// AMP boilerplate script in head.
 		add_action( 'amp_post_template_head', array( $this, 'output_amp_boilerplate' ) );
 		add_action( 'wp_head', array( $this, 'output_amp_boilerplate' ) );

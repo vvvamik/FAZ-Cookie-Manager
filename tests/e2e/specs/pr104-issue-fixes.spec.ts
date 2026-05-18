@@ -221,7 +221,19 @@ test.describe('PR104 — #110 Geolocation multi-source consensus', () => {
       cf: 'US',
       geoip: 'DE',
     });
-    expect(r.captured.ip, 'consensus filter receives the visitor IP').toBe('8.8.8.8');
+    // F019 fix (1.14.2): third argument was changed from raw IP to a
+    // wp_hash('nonce')-derived HMAC-style hash. Filter consumers can
+    // still correlate detections of the same client (stable per-IP
+    // per-salt) without ever seeing the IP itself. Assert non-empty
+    // hex-ish string instead of raw IP.
+    expect(
+      r.captured.ip,
+      'consensus filter receives an HMAC-style hash of the visitor IP (not the raw IP)',
+    ).not.toBe('8.8.8.8');
+    expect(
+      typeof r.captured.ip === 'string' && r.captured.ip.length >= 16,
+      `consensus filter passes a non-empty hash (got: ${JSON.stringify(r.captured.ip)})`,
+    ).toBe(true);
   });
 });
 

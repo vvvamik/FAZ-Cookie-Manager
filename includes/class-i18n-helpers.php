@@ -325,9 +325,13 @@ if ( ! function_exists( 'faz_country_to_locale' ) ) {
 			'GB' => 'en_GB', 'US' => 'en_US', 'CA' => 'en_CA',
 			'AU' => 'en_AU', 'NZ' => 'en_NZ', 'IN' => 'en_IN',
 			'ZA' => 'en_ZA', 'IE' => 'en_IE',
-			// French — France / Canada / Belgium
-			'FR' => 'fr_FR', 'CA_FR' => 'fr_CA', // CA_FR is a synthetic key,
-			'MC' => 'fr_FR', 'LU' => 'fr_FR',
+			// French — France / Monaco / Luxembourg.
+			// (Canada returns 'en_CA' from this map; sites targeting
+			// Quebec-French audiences should override via the
+			// `faz_country_to_locale` filter to return 'fr_CA' for CA —
+			// the 2-letter input contract makes a synthetic CA_FR key
+			// here unreachable. F012 fix.)
+			'FR' => 'fr_FR', 'MC' => 'fr_FR', 'LU' => 'fr_FR',
 			// German — Germany / Austria / Switzerland
 			'DE' => 'de_DE', 'AT' => 'de_AT', 'CH' => 'de_CH', 'LI' => 'de_DE',
 			// Italian

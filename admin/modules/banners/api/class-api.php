@@ -309,8 +309,12 @@ class Api extends Rest_Controller {
 	public function delete_item( $request ) {
 		$banner_id = (int) $request['id'];
 		if ( $banner_id <= 0 ) {
+			// F003 fix: the prior error code 'fazcookie_rest_item_exists'
+			// was semantically inverted for an invalid-id guard. Use the
+			// shared invalid-id code so REST clients can branch on a
+			// consistent error code across get_item / delete_item.
 			return new WP_Error(
-				'fazcookie_rest_item_exists',
+				'fazcookie_rest_invalid_id',
 				__( 'Invalid banner id', 'faz-cookie-manager' ),
 				array( 'status' => 400 )
 			);

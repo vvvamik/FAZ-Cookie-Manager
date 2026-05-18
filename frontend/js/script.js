@@ -180,11 +180,29 @@ function _fazReadScopedCookieValue(key, legacyKey) {
     if (_fazStrictScopeFp()) {
         return fazcookieConsentMap[key] || "";
     }
-    return (
-        fazcookieConsentMap[key]
-        || (legacyKey ? fazcookieConsentMap[legacyKey] : "")
-        || ""
-    );
+    const primary = fazcookieConsentMap[key];
+    if (primary) return primary;
+    if (!legacyKey) return "";
+    // F005 fix: the unprefixed legacy keys ("banner", "law") can collide
+    // with a category slug — `sanitize_title()` permits both names. A
+    // returning visitor whose install has a category exactly named
+    // "banner" or "law" would read that category's consent value ("yes"
+    // / "no" / "yes:<timestamp>") here instead of a banner slug. The
+    // scope-change comparison would then ALWAYS fire (e.g. "yes" !=
+    // "gdpr-1"), invalidating the consent cookie on every page load and
+    // re-prompting indefinitely — a serious privacy regression.
+    //
+    // Guard: a real banner slug is a sanitize_title() output of the
+    // banner name (typically "gdpr-1", "ccpa-2", "new-banner-42") and
+    // ALWAYS ends with "-N" where N is the banner_id integer. A
+    // category consent value is "yes" / "no" / "yes:1234567890" or
+    // similar. Reject values that look like category consent values.
+    const legacyValue = fazcookieConsentMap[legacyKey] || "";
+    if (!legacyValue) return "";
+    // Reject pure "yes" / "no" and any value starting with "yes:" / "no:"
+    // (the timestamped form). Banner slugs never match.
+    if (/^(yes|no)(:.*)?$/i.test(legacyValue)) return "";
+    return legacyValue;
 }
 function _fazCurrentScopeFingerprint() {
     return (_fazStore && typeof _fazStore._scopeFingerprint === 'string') ? _fazStore._scopeFingerprint : "";

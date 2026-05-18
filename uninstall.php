@@ -288,27 +288,34 @@ if ( $faz_force_remove_all || faz_should_remove_on_uninstall() || is_multisite()
 		// per-blog wp_options — the faz_cleanup_site_data() loop above
 		// queries wp_options and therefore misses every network-level
 		// site_transient. Sweep them here in one pass on the primary
-		// network.
-		global $wpdb;
-		$faz_sitemeta_prefixes = array(
-			$wpdb->esc_like( '_site_transient_faz' ) . '%',
-			$wpdb->esc_like( '_site_transient_timeout_faz' ) . '%',
-		);
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$faz_network_transients = $wpdb->get_col(
-			$wpdb->prepare(
-				"SELECT meta_key FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s OR meta_key LIKE %s",
-				$faz_sitemeta_prefixes[0],
-				$faz_sitemeta_prefixes[1]
-			)
-		);
-		foreach ( $faz_network_transients as $faz_network_transient ) {
-			if ( 0 === strpos( $faz_network_transient, '_site_transient_timeout_' ) ) {
-				$faz_network_transient = substr( $faz_network_transient, strlen( '_site_transient_timeout_' ) );
-			} elseif ( 0 === strpos( $faz_network_transient, '_site_transient_' ) ) {
-				$faz_network_transient = substr( $faz_network_transient, strlen( '_site_transient_' ) );
+		// network — F020 fix: gate this sweep on
+		// faz_should_remove_on_uninstall(0) (network-level / primary
+		// blog id=0 sentinel). Without the gate, a multisite admin who
+		// kept remove_data_on_uninstall=false on every subsite would
+		// still see the FAZ network-level site_transients vanish on
+		// uninstall, violating the data-retention contract.
+		if ( faz_should_remove_on_uninstall( 0 ) ) {
+			global $wpdb;
+			$faz_sitemeta_prefixes = array(
+				$wpdb->esc_like( '_site_transient_faz' ) . '%',
+				$wpdb->esc_like( '_site_transient_timeout_faz' ) . '%',
+			);
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$faz_network_transients = $wpdb->get_col(
+				$wpdb->prepare(
+					"SELECT meta_key FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s OR meta_key LIKE %s",
+					$faz_sitemeta_prefixes[0],
+					$faz_sitemeta_prefixes[1]
+				)
+			);
+			foreach ( $faz_network_transients as $faz_network_transient ) {
+				if ( 0 === strpos( $faz_network_transient, '_site_transient_timeout_' ) ) {
+					$faz_network_transient = substr( $faz_network_transient, strlen( '_site_transient_timeout_' ) );
+				} elseif ( 0 === strpos( $faz_network_transient, '_site_transient_' ) ) {
+					$faz_network_transient = substr( $faz_network_transient, strlen( '_site_transient_' ) );
+				}
+				delete_site_transient( $faz_network_transient );
 			}
-			delete_site_transient( $faz_network_transient );
 		}
 	} elseif ( faz_should_remove_on_uninstall() ) {
 		faz_cleanup_site_data();

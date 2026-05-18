@@ -780,8 +780,23 @@ class Activator {
 				)
 			);
 			if ( 0 === $tc_exists ) {
+				// F002/F009 fix: match the canonical CREATE TABLE schema in
+				// class-controller.php which declares this column NOT NULL
+				// (longtext NOT NULL). The pre-fix safety-net added it as
+				// NULL-able, producing a nullability drift between fresh
+				// installs (NOT NULL) and upgraded installs (NULL-able)
+				// that future dbDelta passes would keep trying to reconcile.
+				// `DEFAULT (JSON_ARRAY())` would be cleaner but isn't
+				// universally supported (MySQL 8.0.13+ / MariaDB 10.2.7+);
+				// fall back to an explicit UPDATE to backfill the
+				// canonical empty-array value after the ALTER.
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- one-shot DDL on the plugin's custom table; column type is a fixed literal, no user input.
-				$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `target_countries` longtext NULL" );
+				$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN `target_countries` longtext NOT NULL" );
+				// Backfill existing rows with the empty-array JSON so the
+				// NOT NULL constraint is satisfied. Skipped automatically
+				// when the table is empty.
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->query( "UPDATE `{$table}` SET `target_countries` = '[]' WHERE `target_countries` = '' OR `target_countries` IS NULL" );
 			}
 			$pr_exists = (int) $wpdb->get_var(
 				$wpdb->prepare(

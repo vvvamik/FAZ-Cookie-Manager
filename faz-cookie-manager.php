@@ -487,6 +487,19 @@ add_filter( 'rest_pre_dispatch', function ( $result, $server, $request ) {
 	if ( false === strpos( $route, '/faz/v1/' ) && '/faz/v1' !== rtrim( $route, '/' ) ) {
 		return $result;
 	}
+	// F004 fix: the public /faz/v1/banner/{lang} endpoint emits
+	// `Cache-Control: public, max-age=300` from its own callback so
+	// LSCache / a CDN can serve the localized banner payload to repeat
+	// anonymous visitors. Without this exclusion the no-cache stack
+	// below would defeat that intentional 5-minute caching. The trailing
+	// slash is load-bearing: `/faz/v1/banner` would also prefix-match
+	// the admin REST collection `/faz/v1/banners` (plural), wrongly
+	// exempting it from the no-cache stack and reintroducing the
+	// LSCache stale-list bug that commit 143ee0b fixed. Mirrors the
+	// exclusion in admin/class-admin.php::add_rest_nocache_headers.
+	if ( 0 === strpos( $route, '/faz/v1/banner/' ) ) {
+		return $result;
+	}
 	do_action( 'litespeed_control_set_nocache', 'FAZ Cookie Manager REST route' );
 	if ( ! headers_sent() ) {
 		header( 'X-LiteSpeed-Cache-Control: no-cache, no-vary', true );
