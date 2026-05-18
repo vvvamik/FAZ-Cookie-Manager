@@ -458,6 +458,49 @@ $faz_loader->run();
 // its own "is banner disabled" checks.
 \FazCookie\Includes\Integrations\Paid_Memberships_Pro::get_instance()->register_hooks();
 
+/**
+ * Force every /faz/v1/* REST response out of the LiteSpeed / CDN cache.
+ *
+ * Reported on prod (fabiodalez.it 2026-05-18, 1.14.1): after a POST /banners
+ * + immediate GET /banners, the GET returned the pre-POST list. Live trace
+ * showed `x-litespeed-cache: hit,private` on the GET — LiteSpeed had stored
+ * the previous GET response in its "private" (per-user) cache and was
+ * serving it back, even though the response carried
+ * `Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private`.
+ *
+ * LSCache decides caching eligibility based on the
+ * `litespeed_control_set_nocache` action and the request-time
+ * `X-LiteSpeed-Cache-Control` header — it does NOT honour the
+ * response-time `Cache-Control: no-store` directive on routes that the
+ * site has opted into private-cache mode for. The fix is to fire the
+ * action AND emit the header BEFORE the route callback runs, on every
+ * request inside our namespace.
+ *
+ * Hooked on `rest_pre_dispatch` so it runs after WordPress matches the
+ * route but before the callback fires — guaranteed coverage for every
+ * /wp-json/faz/v1/* request, including ones that bypass the
+ * Admin::render_page() path that the admin-page-only fix in commit
+ * 6cc0b29 covers.
+ */
+add_filter( 'rest_pre_dispatch', function ( $result, $server, $request ) {
+	$route = $request->get_route();
+	if ( false === strpos( $route, '/faz/v1/' ) && '/faz/v1' !== rtrim( $route, '/' ) ) {
+		return $result;
+	}
+	do_action( 'litespeed_control_set_nocache', 'FAZ Cookie Manager REST route' );
+	if ( ! headers_sent() ) {
+		header( 'X-LiteSpeed-Cache-Control: no-cache, no-vary', true );
+		header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private', true );
+	}
+	if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+		define( 'DONOTCACHEPAGE', true );
+	}
+	if ( ! defined( 'DONOTCACHEOBJECT' ) ) {
+		define( 'DONOTCACHEOBJECT', true );
+	}
+	return $result;
+}, 10, 3 );
+
 // Register WP-CLI commands.
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	\WP_CLI::add_command( 'faz', 'FazCookie\Includes\WP_CLI_Commands' );
