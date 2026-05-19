@@ -790,12 +790,20 @@ class Controller extends Base_Controller {
 	 * visitor's country, and a zero-default install loses that path.
 	 *
 	 * Selection preference (deterministic):
-	 *   1. status=1 row with the lowest banner_id (other than $exclude_id)
+	 *   1. status=1 AND banner_default=0 row with the lowest banner_id
+	 *      (other than $exclude_id) — the cleanest promotion target
 	 *   2. any row with the lowest banner_id (other than $exclude_id)
 	 *
 	 * No-op when no other row exists — the caller's row is the only one
 	 * left and removing its default flag is a legitimate "I want zero
 	 * banners on this install" state.
+	 *
+	 * Concurrency contract: MUST run inside the caller's transaction.
+	 * Both SELECTs use FOR UPDATE so the row we promote is row-locked
+	 * under the caller's lock scope; cache invalidation is intentionally
+	 * NOT performed here — callers (update_item / delete_item) flush the
+	 * cache AFTER their own COMMIT so a concurrent read doesn't
+	 * repopulate it with the pre-commit snapshot.
 	 *
 	 * @since 1.14.0
 	 * @param int $exclude_id Row that just lost its default flag; never re-promoted to itself.
@@ -804,12 +812,20 @@ class Controller extends Base_Controller {
 	public function promote_fallback_default( $exclude_id = 0 ) {
 		global $wpdb;
 		$exclude_id = absint( $exclude_id );
-		// Prefer a status=1 row first; fall back to any row only if no
-		// active banner exists. Both queries exclude the caller's row.
+		// F302 / CodeRabbit#1: prefer an ACTIVE, NON-DEFAULT peer first
+		// (typical case after delete_item removes the row that was the
+		// only default). Both SELECTs use FOR UPDATE so the chosen row
+		// is row-locked under the caller's transaction — REPEATABLE
+		// READ alone gives a consistent snapshot but no row lock, so
+		// two concurrent delete_item() transactions could both pick
+		// the same peer and one of the UPDATEs would lose. With
+		// FOR UPDATE the second SELECT blocks until the first
+		// transaction commits/rolls back.
 		$fallback_id = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prepare(
-				"SELECT banner_id FROM `{$wpdb->prefix}faz_banners` WHERE `status` = %d AND `banner_id` <> %d ORDER BY `banner_id` ASC LIMIT %d",
+				"SELECT banner_id FROM `{$wpdb->prefix}faz_banners` WHERE `status` = %d AND `banner_default` = %d AND `banner_id` <> %d ORDER BY `banner_id` ASC LIMIT %d FOR UPDATE",
 				1,
+				0,
 				$exclude_id,
 				1
 			)
@@ -817,7 +833,7 @@ class Controller extends Base_Controller {
 		if ( $fallback_id <= 0 ) {
 			$fallback_id = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 				$wpdb->prepare(
-					"SELECT banner_id FROM `{$wpdb->prefix}faz_banners` WHERE `banner_id` <> %d ORDER BY `banner_id` ASC LIMIT %d",
+					"SELECT banner_id FROM `{$wpdb->prefix}faz_banners` WHERE `banner_id` <> %d ORDER BY `banner_id` ASC LIMIT %d FOR UPDATE",
 					$exclude_id,
 					1
 				)
@@ -831,7 +847,7 @@ class Controller extends Base_Controller {
 				array( '%d' ),
 				array( '%d' )
 			);
-			$this->delete_cache();
+			// F301: NO delete_cache() here — caller invokes it after COMMIT.
 		}
 	}
 

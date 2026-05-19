@@ -304,7 +304,21 @@ if ( $faz_force_remove_all || faz_should_remove_on_uninstall() || is_multisite()
 		// would otherwise reference cleaned-up per-blog data and turn
 		// into orphans). Use the $faz_any_opted_in accumulator we
 		// built during the per-blog loop above.
-		if ( $faz_any_opted_in ) {
+		//
+		// F304 fix (1.14.4): also honour FAZ_REMOVE_ALL_DATA. The
+		// constant is a wp-config.php override that forces full data
+		// removal regardless of any per-site opt-in. If get_sites()
+		// returns empty (degenerate state — pure-network setup,
+		// mid-teardown ordering, all subsites just deleted), the
+		// per-blog loop never sets $faz_any_opted_in even when the
+		// admin explicitly asked for everything to go. Gate the
+		// network sweep on either source of intent.
+		//
+		// Invariant: the network sweep MUST NOT run unless at least
+		// one source (per-site opt-in OR FAZ_REMOVE_ALL_DATA) has
+		// requested data removal. Flipping this gate would violate
+		// the uninstall privacy contract (CodeRabbit#3).
+		if ( $faz_force_remove_all || $faz_any_opted_in ) {
 			global $wpdb;
 			$faz_sitemeta_prefixes = array(
 				$wpdb->esc_like( '_site_transient_faz' ) . '%',

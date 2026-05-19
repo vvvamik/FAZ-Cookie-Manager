@@ -888,24 +888,37 @@ class Activator {
 			}
 		}
 
-		// F103 fix (1.14.3): upgrade-path companion to the
-		// `ENGINE=InnoDB` literal in get_schema(). dbDelta does NOT
-		// migrate existing tables' storage engines — installs that
-		// historically created faz_banners under a MyISAM default
-		// would stay on MyISAM forever, defeating the delete_item
-		// transaction. Probe and ALTER once on this migration.
-		// MyISAM-on-InnoDB-host is rare in 2026 but legacy AWS RDS
-		// parameter groups and customised shared hosts still trip it.
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$current_engine = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT `ENGINE` FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
-				$wpdb->prefix . 'faz_banners'
-			)
+		// F103 fix (1.14.3) + F303 fix (1.14.4): upgrade-path companion
+		// to the `ENGINE=InnoDB` literals in get_schema(). dbDelta does
+		// NOT migrate existing tables' storage engines — installs that
+		// historically created these tables under a MyISAM default
+		// would stay on MyISAM forever, defeating any START TRANSACTION
+		// the controllers issue against them. MyISAM-on-InnoDB-host is
+		// rare in 2026 but legacy AWS RDS parameter groups and
+		// customised shared hosts still trip it.
+		//
+		// Tables that participate in transactional code paths:
+		// - faz_banners: delete_item() wraps DELETE + promote_fallback
+		// - faz_cookies + faz_cookie_categories: settings import in
+		//   admin/modules/settings/api/class-api.php uses START
+		//   TRANSACTION to wrap multi-row writes.
+		$faz_innodb_tables = array(
+			$wpdb->prefix . 'faz_banners',
+			$wpdb->prefix . 'faz_cookies',
+			$wpdb->prefix . 'faz_cookie_categories',
 		);
-		if ( $current_engine && 'InnoDB' !== $current_engine ) {
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,PluginCheck.Security.DirectDB.UnescapedDBParameter
-			$wpdb->query( "ALTER TABLE `{$table}` ENGINE=InnoDB" );
+		foreach ( $faz_innodb_tables as $faz_innodb_table ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$current_engine = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT `ENGINE` FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+					$faz_innodb_table
+				)
+			);
+			if ( $current_engine && 'InnoDB' !== $current_engine ) {
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,PluginCheck.Security.DirectDB.UnescapedDBParameter
+				$wpdb->query( "ALTER TABLE `{$faz_innodb_table}` ENGINE=InnoDB" );
+			}
 		}
 
 		faz_clear_banner_template_cache();
