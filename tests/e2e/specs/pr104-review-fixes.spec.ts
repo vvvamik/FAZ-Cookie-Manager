@@ -407,16 +407,22 @@ test.describe('PR104 — F-SEC-04 has_country_dependent_banners memoize', () => 
     const result = wpEval(`
       $ctrl = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance();
       // First call: populates the cache under the current epoch's key.
-      $epoch_before = (int) get_option( 'faz_banner_cache_epoch', 0 );
+      // F305 (1.14.3+): the epoch is stored as a microsecond-precision
+      // float string from sprintf('%.6F', microtime(true)). Cast to
+      // (float) — NOT (int) — so two delete_cache() calls within the
+      // same wall-clock second still produce strictly-greater values.
+      $epoch_before = (string) get_option( 'faz_banner_cache_epoch', '0' );
       $first  = $ctrl->has_country_dependent_banners();
       $cached = wp_cache_get( 'faz_has_country_dependent_banners_v' . $epoch_before, 'faz_banners' );
       // delete_cache must bump the epoch — multi-node-safe invalidation.
       $ctrl->delete_cache();
-      $epoch_after = (int) get_option( 'faz_banner_cache_epoch', 0 );
+      $epoch_after = (string) get_option( 'faz_banner_cache_epoch', '0' );
       echo wp_json_encode( array(
         'first_value'         => (bool) $first,
         'cached_after_first'  => $cached !== false,
-        'epoch_bumped'        => $epoch_after > $epoch_before,
+        // bccomp returns 1 when arg1 > arg2 — string-safe ordering
+        // for the float-shaped epoch.
+        'epoch_bumped'        => bccomp( $epoch_after, $epoch_before, 6 ) === 1,
       ) );
     `).trim();
     const data = JSON.parse(result);
@@ -685,11 +691,18 @@ test.describe('PR104 — F-UX-02/03/05/06 admin UI elements present', () => {
     expect(borderColor, 'F-UX-02: warning border colour is present').toMatch(/rgb\(245,\s*158,\s*11\)|#f59e0b/i);
 
     // F-UX-03 — sub-toggle disabled when parent toggle is off.
+    // Note: #faz-b-close-toggle is the <label>, not the <input>. The
+    // sync handler binds to the underlying checkbox via descendant
+    // selector (banner.js F001 fix at line 985-987). Dispatch the
+    // change event on the actual input — that matches the production
+    // event flow when a user clicks the label (browser fires change
+    // on the input, not the label).
     await page.evaluate(() => {
-      const parent = document.getElementById('faz-b-close-toggle') as HTMLInputElement | null;
-      if (parent && parent.checked) {
-        parent.checked = false;
-        parent.dispatchEvent(new Event('change'));
+      const label = document.getElementById('faz-b-close-toggle');
+      const input = label ? label.querySelector('input[type="checkbox"]') as HTMLInputElement | null : null;
+      if (input && input.checked) {
+        input.checked = false;
+        input.dispatchEvent(new Event('change'));
       }
     });
     const isDisabled = await page.locator('#faz-b-close-with-reject').evaluate((el) => (el as HTMLInputElement).disabled);

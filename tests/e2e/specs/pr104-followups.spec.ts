@@ -516,10 +516,15 @@ test.describe('PR104-FU — has_country_dependent_banners cache invalidation', (
       $ctrl = \\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller::get_instance();
 
       // Reset the epoch to a known floor so the assertions don't depend
-      // on whatever value previous tests left behind.
-      update_option( 'faz_banner_cache_epoch', 0, false );
+      // on whatever value previous tests left behind. F305 (1.14.3+):
+      // the epoch is stored as a microsecond-precision float STRING
+      // from sprintf('%.6F', microtime(true)), so seed/read as string
+      // and compare with bccomp() — two delete_cache() calls within
+      // the same wall-clock second still produce strictly-greater
+      // values that an int cast would collapse.
+      update_option( 'faz_banner_cache_epoch', '0', false );
       $ctrl->delete_cache();
-      $epoch_after_first_delete = (int) get_option( 'faz_banner_cache_epoch', 0 );
+      $epoch_after_first_delete = (string) get_option( 'faz_banner_cache_epoch', '0' );
 
       // Seed the cache for the current epoch.
       $first  = $ctrl->has_country_dependent_banners();
@@ -529,7 +534,7 @@ test.describe('PR104-FU — has_country_dependent_banners cache invalidation', (
       // unreferenced (would expire via TTL), and any subsequent read
       // queries a DIFFERENT key, forcing a recompute on every node.
       $ctrl->delete_cache();
-      $epoch_after_second_delete = (int) get_option( 'faz_banner_cache_epoch', 0 );
+      $epoch_after_second_delete = (string) get_option( 'faz_banner_cache_epoch', '0' );
       $second = $ctrl->has_country_dependent_banners();
       $cached_under_old_key = wp_cache_get( 'faz_has_country_dependent_banners_v' . $epoch_after_first_delete, 'faz_banners' );
       $cached_under_new_key = wp_cache_get( 'faz_has_country_dependent_banners_v' . $epoch_after_second_delete, 'faz_banners' );
@@ -539,6 +544,9 @@ test.describe('PR104-FU — has_country_dependent_banners cache invalidation', (
         'second'                      => (bool) $second,
         'epoch_after_first_delete'    => $epoch_after_first_delete,
         'epoch_after_second_delete'   => $epoch_after_second_delete,
+        // bccomp returns 1 when arg1 > arg2 — string-safe ordering at
+        // 6-decimal precision (matches sprintf('%.6F', ...) output).
+        'epoch_strictly_greater'      => bccomp( $epoch_after_second_delete, $epoch_after_first_delete, 6 ) === 1,
         'cached_after_first_seed'     => $cached_after_first !== false,
         'old_key_still_cached'        => $cached_under_old_key !== false,
         'new_key_freshly_cached'      => $cached_under_new_key !== false,
@@ -547,7 +555,7 @@ test.describe('PR104-FU — has_country_dependent_banners cache invalidation', (
     const data = JSON.parse(result);
     expect(data.first, 'first call resolves to a concrete bool').toBe(data.second);
     expect(data.cached_after_first_seed, 'first call seeded the cache for its epoch').toBe(true);
-    expect(data.epoch_after_second_delete, 'delete_cache bumps the epoch').toBeGreaterThan(data.epoch_after_first_delete);
+    expect(data.epoch_strictly_greater, 'delete_cache bumps the epoch (microsecond-precision string compare)').toBe(true);
     expect(data.new_key_freshly_cached, 'new epoch key carries the post-invalidation value').toBe(true);
     // Old-key visibility is incidental — wp_cache_set kept it under the old
     // epoch's key, which is now unreferenced and will TTL out. The
