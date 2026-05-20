@@ -16,10 +16,10 @@
  * Plugin Name:       FAZ Cookie Manager
  * Plugin URI:        https://github.com/fabiodalez-dev/faz-cookie-manager
  * Description:       A comprehensive GDPR/CCPA cookie consent manager with built-in cookie scanner, local consent logging, Google Consent Mode v2, and IAB TCF v2.3 support.
- * Version:           1.14.3
+ * Version:           1.15.0
  * Requires at least: 5.0
  * Tested up to:      7.0
- * Stable tag:        1.14.3
+ * Stable tag:        1.15.0
  * Requires PHP:      7.4
  * Author:            Fabio D'Alessandro
  * Author URI:        https://fabiodalez.it/
@@ -51,7 +51,7 @@ if ( ! defined( 'WPINC' ) ) {
 	die;
 }
 
-define( 'FAZ_VERSION', '1.14.3' );
+define( 'FAZ_VERSION', '1.15.0' );
 define( 'FAZ_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
 define( 'FAZ_PLUGIN_BASEPATH', plugin_dir_path( __FILE__ ) );
 define( 'FAZ_PLUGIN_FILENAME', __FILE__ );
@@ -405,6 +405,21 @@ require_once FAZ_PLUGIN_BASEPATH . 'class-autoloader.php';
 
 $autoloader = new \FazCookie\Autoloader();
 $autoloader->register();
+
+/**
+ * Bootstrap geo-routing v2 REST API (spec 001 — P6 task T087).
+ *
+ * Registers all /faz/v1/geo/* endpoints on rest_api_init. Keeps the
+ * orchestrator (admin/modules/geo-routing/class-geo-routing.php) inert
+ * — only the REST surface activates here.
+ *
+ * @since 1.15.0
+ */
+add_action( 'rest_api_init', function() {
+	if ( class_exists( '\\FazCookie\\Admin\\Modules\\Geo_Routing\\Api\\Geo_Api' ) ) {
+		\FazCookie\Admin\Modules\Geo_Routing\Api\Geo_Api::get_instance()->register_routes();
+	}
+} );
 
 register_activation_hook( __FILE__, function( $network_wide ) {
 	if ( is_multisite() && $network_wide ) {
