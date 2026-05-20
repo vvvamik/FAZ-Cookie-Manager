@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/ruleset.schema.json",
+  "id": "pipeda-canada",
+  "version": "1.0.0",
+  "display_name": "PIPEDA — Canada",
+  "law_references": [
+    "PIPEDA"
+  ],
+  "applies_to": {
+    "countries": [
+      "CA"
+    ]
+  },
+  "model": "opt-out",
+  "native_lang": "en",
+  "official_resources_url": [
+    "https://www.priv.gc.ca/"
+  ],
+  "signals": {
+    "tcf_v22": false,
+    "gpp": {
+      "enabled": false,
+      "section": null
+    },
+    "gpc_honored": false,
+    "gpc_required": false,
+    "dnt_honored": false,
+    "cmv2": {
+      "ad_storage": "granted",
+      "analytics_storage": "granted",
+      "ad_user_data": "granted",
+      "ad_personalization": "granted",
+      "personalization_storage": "granted",
+      "functionality_storage": "granted",
+      "security_storage": "granted"
+    }
+  },
+  "ui": {
+    "equal_weight_buttons": true,
+    "donotsell_link_required": false,
+    "sensitive_separate_optin": false,
+    "revisit_widget_required": true,
+    "default_categories": {
+      "necessary": "granted-locked",
+      "functional": "granted",
+      "analytics": "granted",
+      "marketing": "granted",
+      "profiling": "granted"
+    }
+  },
+  "cross_border_notes": null,
+  "_meta": {
+    "behavior_review_date": "2026-05-20",
+    "next_review_due": "2027-05-20",
+    "notes": "Opt-out + notice. CASL parallelo per email."
+  }
+}
