@@ -47,7 +47,7 @@ test.describe('Cookie Policy Generator — admin integration (Spec 002)', () => 
     const fakeJson = JSON.stringify(FAKE_DATA).replace(/'/g, "\\'");
     wpEval(`update_option('faz_cookie_policy_data', json_decode('${fakeJson}', true));`);
     // Make sure a public page exists with the shortcode for the frontend test.
-    upsertPage('cookie-policy-e2e', 'Cookie Policy E2E', '[faz_cookie_policy]');
+    upsertPage('cookie-policy-e2e', 'Cookie Policy E2E', '[faz_cookie_policy_v2]');
   });
 
   test.afterAll(async () => {
@@ -225,6 +225,29 @@ test.describe('Cookie Policy Generator — admin integration (Spec 002)', () => 
     await expect(article).toHaveAttribute('data-faz-policy-version', /^[0-9a-f]+\.[0-9a-f]+$/);
   });
 
+  test('6b. legacy [faz_cookie_policy] shortcode still registered + renders alongside v2', () => {
+    // Regression guard for PR #116 review feedback (2026-05-20): the
+    // generator must NOT shadow the long-standing faz_cookie_policy
+    // shortcode (with site_name / contact / show_table attributes
+    // and the "How to Manage Cookies" section). Both shortcodes
+    // must coexist.
+    const legacyOut = wpEval(
+      `echo do_shortcode('[faz_cookie_policy site_name="QA Cookie Site" contact="qa@example.com" show_table="no"]');`,
+    ).trim();
+    // Legacy strings that the older regression tests assert against.
+    expect(legacyOut, 'legacy shortcode renders').toMatch(/<div class="faz-cookie-policy"/);
+    expect(legacyOut, 'legacy "How to Manage Cookies" section').toContain('Manage Cookies');
+    expect(legacyOut, 'legacy site_name substituted').toContain('QA Cookie Site');
+    expect(legacyOut, 'legacy contact substituted').toContain('qa@example.com');
+    // show_table="no" should hide the "Cookies We Use" section.
+    expect(legacyOut, 'show_table=no hides table section').not.toContain('Cookies We Use');
+
+    // v2 shortcode renders independently.
+    const v2Out = wpEval(`echo do_shortcode('[faz_cookie_policy_v2 lang="en"]');`).trim();
+    expect(v2Out, 'v2 shortcode renders').toMatch(/<article class="faz-cookie-policy"/);
+    expect(v2Out, 'v2 emits disclaimer').toContain('faz-cookie-policy-disclaimer');
+  });
+
   test('6. 6 languages × 3 jurisdictions matrix renders without leftover tokens', async ({ page }) => {
     // We exercise the shortcode directly via WP eval (avoids creating 18 pages).
     const langs = ['en', 'it', 'fr', 'de', 'es', 'pt-BR'];
@@ -232,7 +255,7 @@ test.describe('Cookie Policy Generator — admin integration (Spec 002)', () => 
 
     for (const j of jurisdictions) {
       for (const l of langs) {
-        const out = wpEval(`echo do_shortcode('[faz_cookie_policy lang="${l}" jurisdiction="${j}"]');`).trim();
+        const out = wpEval(`echo do_shortcode('[faz_cookie_policy_v2 lang="${l}" jurisdiction="${j}"]');`).trim();
 
         // Sanity: non-trivial output (>= 400 chars).
         expect(out.length, `policy ${j}/${l} length`).toBeGreaterThanOrEqual(400);

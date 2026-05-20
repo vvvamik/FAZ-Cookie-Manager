@@ -26,7 +26,20 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Cookie_Policy_Generator {
 
-	const SHORTCODE = 'faz_cookie_policy';
+	/**
+	 * Shortcode name.
+	 *
+	 * Deliberately `faz_cookie_policy_v2` (NOT `faz_cookie_policy`) to
+	 * coexist with the long-standing `[faz_cookie_policy]` shortcode
+	 * defined in includes/class-cookie-policy-shortcode.php. The legacy
+	 * shortcode accepts site_name / contact / show_table attributes and
+	 * renders a canned five-section policy in the active WP locale; the
+	 * v2 shortcode is jurisdiction-aware (GDPR / CCPA / LGPD) and pulls
+	 * its data from the admin form (Spec 002). Both stay supported.
+	 *
+	 * @since 1.16.0
+	 */
+	const SHORTCODE = 'faz_cookie_policy_v2';
 
 	/**
 	 * @var self|null

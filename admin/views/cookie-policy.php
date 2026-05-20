@@ -171,12 +171,15 @@ $rest_url   = esc_url( rest_url( 'faz/v1/cookie-policy/' ) );
 		</div>
 		<div class="faz-card-body">
 			<p><?php esc_html_e( 'Paste this shortcode on any page or post:', 'faz-cookie-manager' ); ?></p>
-			<p><code>[faz_cookie_policy]</code></p>
+			<p><code>[faz_cookie_policy_v2]</code></p>
 			<p class="faz-help"><?php esc_html_e( 'With explicit language or jurisdiction:', 'faz-cookie-manager' ); ?></p>
 			<p>
-				<code>[faz_cookie_policy lang="it"]</code><br>
-				<code>[faz_cookie_policy jurisdiction="ccpa-california"]</code><br>
-				<code>[faz_cookie_policy lang="pt-BR" jurisdiction="lgpd-brazil"]</code>
+				<code>[faz_cookie_policy_v2 lang="it"]</code><br>
+				<code>[faz_cookie_policy_v2 jurisdiction="ccpa-california"]</code><br>
+				<code>[faz_cookie_policy_v2 lang="pt-BR" jurisdiction="lgpd-brazil"]</code>
+			</p>
+			<p class="faz-help" style="margin-top:14px;">
+				<?php echo wp_kses_post( __( '<strong>Note:</strong> the long-standing <code>[faz_cookie_policy]</code> shortcode (with <code>site_name</code> / <code>contact</code> / <code>show_table</code> attributes) is still supported for backward compatibility. The new <code>[faz_cookie_policy_v2]</code> renders the jurisdiction-aware template from the form above.', 'faz-cookie-manager' ) ); ?>
 			</p>
 			<hr style="margin:14px 0;">
 			<p class="faz-help"><strong><?php esc_html_e( 'Editor compatibility:', 'faz-cookie-manager' ); ?></strong></p>
