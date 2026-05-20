@@ -378,13 +378,21 @@ var _revisitFazConsent = function () {
     //   - `action` is already recorded (first-time visitors MUST see
     //     the full banner for compliance — the proposed shortcut only
     //     kicks in after a previous choice)
+    //   - the optout-popup container actually exists in the DOM. The
+    //     `classic` template type does NOT include the optout-popup
+    //     element (verified across templates/6.2.0/template.json: box /
+    //     banner / banner-sidebar / box-sidebar all carry it, classic
+    //     does not). If a future install uses classic + CCPA together,
+    //     fall back to the legacy `_fazShowBanner()` path so the user
+    //     never lands on a non-existent popup.
     //
     // _fazGetLaw() resolves the active law for THIS visitor (multi-
     // banner geo-routing aware), so an EU visitor on a CCPA+GDPR
     // install still gets the GDPR banner on revisit.
     var activeLaw = (typeof _fazGetLaw === "function") ? _fazGetLaw() : "";
     var actionRecorded = ref && ref._fazGetFromStore && ref._fazGetFromStore("action");
-    if (activeLaw === "ccpa" && actionRecorded) {
+    var hasOptoutPopup = !!document.querySelector('[data-faz-tag="optout-popup"]');
+    if (activeLaw === "ccpa" && actionRecorded && hasOptoutPopup) {
         _fazSetPreferenceAction("donotsell-button");
     } else {
         _fazShowBanner();
