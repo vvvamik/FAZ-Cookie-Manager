@@ -84,6 +84,7 @@ assert_eq( $cols['gpp_string'], 'TEXT NULL', 'gpp_string is TEXT (MySQL 5.7 comp
 // ---------- Constants exist ----------
 
 assert_eq( Migration_V2::MIN_INNODB_VERSION, '5.7.6', 'MIN_INNODB_VERSION constant' );
+assert_eq( Migration_V2::MIN_MARIADB_VERSION, '10.3.0', 'MIN_MARIADB_VERSION constant (round-2 fix)' );
 assert_eq( Migration_V2::PENDING_OPTION, 'faz_geo_v2_migration_pending', 'PENDING_OPTION constant' );
 assert_eq( Migration_V2::DISABLED_REASON_OPTION, 'faz_geo_v2_disabled_reason', 'DISABLED_REASON_OPTION constant' );
 
@@ -93,6 +94,36 @@ assert_true( method_exists( 'FazCookie\Includes\Migration_V2', 'run' ), 'run() m
 assert_true( method_exists( 'FazCookie\Includes\Migration_V2', 'version_supports_online_ddl' ), 'version_supports_online_ddl() exists' );
 assert_true( method_exists( 'FazCookie\Includes\Migration_V2', 'missing_columns' ), 'missing_columns() exists' );
 assert_true( method_exists( 'FazCookie\Includes\Migration_V2', 'is_complete' ), 'is_complete() exists' );
+
+// ---------- DDL shape regression guards (round-1 + round-2 fix) ----------
+
+// Round-1 fix (CRITICAL): MySQL 5.7 rejects DEFAULT on TEXT/BLOB.
+// The two TEXT columns MUST be "TEXT NULL" without "DEFAULT NULL".
+assert_eq(
+	strpos( $cols['tc_string'], 'DEFAULT' ),
+	false,
+	'tc_string DDL contains NO "DEFAULT" keyword (MySQL 5.7 compat)'
+);
+assert_eq(
+	strpos( $cols['gpp_string'], 'DEFAULT' ),
+	false,
+	'gpp_string DDL contains NO "DEFAULT" keyword (MySQL 5.7 compat)'
+);
+
+// VARCHAR / TINYINT columns DO have DEFAULT NULL — sized types support it.
+assert_true(
+	false !== strpos( $cols['country_at_consent'], 'DEFAULT NULL' ),
+	'country_at_consent (VARCHAR) keeps DEFAULT NULL — only TEXT/BLOB lose it'
+);
+assert_true(
+	false !== strpos( $cols['signal_gpc_received'], 'DEFAULT NULL' ),
+	'signal_gpc_received (TINYINT) keeps DEFAULT NULL'
+);
+
+// Regex coverage: the validation regex must accept both shapes.
+$regex = '/^([A-Z]+\([0-9]+\)|[A-Z]+) NULL(?: DEFAULT NULL)?$/';
+assert_true( 1 === preg_match( $regex, 'TEXT NULL' ), 'regex accepts "TEXT NULL"' );
+assert_true( 1 === preg_match( $regex, 'VARCHAR(64) NULL DEFAULT NULL' ), 'regex accepts sized + DEFAULT NULL' );
 
 // ---------- Summary ----------
 

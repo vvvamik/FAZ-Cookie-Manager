@@ -173,6 +173,52 @@ $_SERVER = array(
 $ip = $resolve_client->invoke( $detector );
 assert_eq( $ip, '2001:db8::42', 'CF v6 edge + v6 CF-Connecting-IP → trusted' );
 
+// ---------- Additional CIDR boundary cases (round-2 regression guards) ----------
+
+// /0 special case (CIDR matches the entire address space).
+assert_true(
+	$ip_in_cidr->invoke( $detector, '8.8.8.8',    '0.0.0.0/0' ),
+	'/0 matches any v4 address (special-case prefix)'
+);
+assert_true(
+	$ip_in_cidr->invoke( $detector, '2001:db8::1', '::/0' ),
+	'/0 matches any v6 address'
+);
+
+// /8 prefix boundary — first byte boundary.
+assert_true(
+	$ip_in_cidr->invoke( $detector, '104.0.0.0',   '104.0.0.0/8' ),
+	'/8 matches first byte boundary low'
+);
+assert_true(
+	$ip_in_cidr->invoke( $detector, '104.255.255.255', '104.0.0.0/8' ),
+	'/8 matches first byte boundary high'
+);
+assert_false(
+	$ip_in_cidr->invoke( $detector, '105.0.0.0',   '104.0.0.0/8' ),
+	'/8 rejects one-past first byte boundary'
+);
+
+// /31 (point-to-point) — 2-address subnet edge case.
+assert_true(
+	$ip_in_cidr->invoke( $detector, '192.0.2.0',  '192.0.2.0/31' ),
+	'/31 first address ∈ range'
+);
+assert_true(
+	$ip_in_cidr->invoke( $detector, '192.0.2.1',  '192.0.2.0/31' ),
+	'/31 second address ∈ range'
+);
+assert_false(
+	$ip_in_cidr->invoke( $detector, '192.0.2.2',  '192.0.2.0/31' ),
+	'/31 third address ∉ range (only 2 addrs)'
+);
+
+// IPv4-mapped IPv6 (::ffff:1.2.3.4) — must NOT match v4 CIDR (different address families).
+assert_false(
+	$ip_in_cidr->invoke( $detector, '::ffff:104.16.5.10', '104.16.0.0/13' ),
+	'IPv4-mapped IPv6 (::ffff:104.16.5.10) ∉ pure v4 CIDR (family mismatch is correct)'
+);
+
 // ---------- Summary ----------
 
 echo "\n--\n";

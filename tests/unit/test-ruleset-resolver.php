@@ -274,6 +274,46 @@ assert_eq(
 	"Invalid region 'US-CALIFORNIA' (>3 chars) → ignored, US no-region → gdpr-strict"
 );
 
+// ---------- Round-2 regression: 8th-arg whitelist + ruleset_id sentinel ----------
+
+// 17. Override with whitelist passed AND override id is valid → use override.
+$override_valid = array(
+	'IT' => array( 'ruleset_id' => 'gdpr-italy', 'delta' => array() ),
+);
+$whitelist = array( 'gdpr-strict', 'ccpa-california', 'gdpr-italy', 'fallback-gdpr-most-protective' );
+assert_eq(
+	Ruleset_Resolver::resolve( 'IT', null, false, $override_valid, $index_countries, $index_regions, $fallback, $whitelist ),
+	'gdpr-italy',
+	'Override valid against whitelist → applied [L2-SP1-S006]'
+);
+
+// 18. Override with whitelist AND override id is INVALID → fall through.
+$override_invalid = array(
+	'IT' => array( 'ruleset_id' => 'gdpr-mars-2099', 'delta' => array() ),
+);
+assert_eq(
+	Ruleset_Resolver::resolve( 'IT', null, false, $override_invalid, $index_countries, $index_regions, $fallback, $whitelist ),
+	'gdpr-strict',
+	'Override invalid against whitelist → fall through to auto-detect [L2-SP1-S006]'
+);
+
+// 19. Override with whitelist = null → no validation, override always applied (back-compat).
+assert_eq(
+	Ruleset_Resolver::resolve( 'IT', null, false, $override_invalid, $index_countries, $index_regions, $fallback, null ),
+	'gdpr-mars-2099',
+	'Whitelist=null disables validation (legacy callers) — override applied verbatim'
+);
+
+// 20. Override ruleset_id explicitly null in shape → falls through, delta still applicable.
+$override_null_id = array(
+	'IT' => array( 'ruleset_id' => null, 'delta' => array( 'banner.color' => '#000' ) ),
+);
+assert_eq(
+	Ruleset_Resolver::resolve( 'IT', null, false, $override_null_id, $index_countries, $index_regions, $fallback ),
+	'gdpr-strict',
+	'Override with null ruleset_id + delta → fall through to auto-detect (consumer applies delta downstream)'
+);
+
 // ---------- Summary ----------
 
 echo "\n--\n";

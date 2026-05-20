@@ -255,6 +255,37 @@ assert_eq( $pr['vpn'], null, 'Non-JSON body → null' );
 $pr = $parse( '' );
 assert_eq( $pr['vpn'], null, 'Empty body → null' );
 
+// ---------- Additional Standard API shape edge cases (round-2 expansion) ----------
+
+// `hosting` alone is documented to be omitted from the response in some
+// Standard tier responses. Verify the parser handles partial flag presence.
+$partial_just_hosting = array( 'hosting' => true ); // no vpn/proxy/tor/relay keys
+$pr = $parse( $partial_just_hosting );
+assert_eq(
+	$pr['vpn'],
+	null,
+	'Response with only "hosting" (no anonymity flags) → parse failure (no false signal)'
+);
+
+// Mixed truthy + falsy — vpn=false but proxy=true → still triggers.
+$mixed = array( 'vpn' => false, 'proxy' => true, 'tor' => false, 'relay' => false, 'hosting' => true );
+$pr = $parse( $mixed );
+assert_eq( $pr['vpn'], true, 'vpn=false + proxy=true → still triggers gate (mixed flags)' );
+
+// JSON-encoded integers (some legacy responses use 1/0 instead of true/false).
+$int_flags = array( 'vpn' => 1, 'proxy' => 0, 'tor' => 0, 'relay' => 0, 'hosting' => 0 );
+$pr = $parse( $int_flags );
+assert_eq( $pr['vpn'], true, 'Integer 1/0 truthy values still detected (PHP empty() semantics)' );
+
+// Truncated JSON body — should parse-fail cleanly, not throw.
+$truncated = '{"vpn":true,"proxy":false,"to'; // incomplete
+$pr = $parse( $truncated );
+assert_eq( $pr['vpn'], null, 'Truncated JSON body → null (no exception)' );
+
+// Array-at-root (not an object) — should parse-fail.
+$pr = $parse( '[true, false, false]' );
+assert_eq( $pr['vpn'], null, 'JSON array at root (not object) → null' );
+
 // ---------- Summary ----------
 
 echo "\n--\n";
