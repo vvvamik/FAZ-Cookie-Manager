@@ -245,6 +245,11 @@ class Admin {
 				'slug'  => self::ADMIN_SLUG . '-gvl',
 				'view'  => 'gvl',
 			),
+			'cookie-policy' => array(
+				'title' => __( 'Cookie Policy', 'faz-cookie-manager' ),
+				'slug'  => self::ADMIN_SLUG . '-cookie-policy',
+				'view'  => 'cookie-policy',
+			),
 			'settings'     => array(
 				'title' => __( 'Settings', 'faz-cookie-manager' ),
 				'slug'  => self::ADMIN_SLUG . '-settings',

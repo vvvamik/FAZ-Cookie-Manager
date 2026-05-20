@@ -2,6 +2,19 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.16.0] — 2026-05-20
+
+### Added
+
+- **Cookie Policy Generator** (Spec 002). New admin tab under `FAZ Cookie Manager → Cookie Policy` and `[faz_cookie_policy]` shortcode that renders a jurisdiction-aware, multi-language Cookie Policy from a template scaffold filled with the admin's own data (company details, DPO, third-party services, retention). Covers three jurisdictions (GDPR EU/EEA/UK, CCPA/CPRA California, LGPD Brazil) and six languages (en, it, fr, de, es, pt-BR) — 18 scaffolds total. The auto-populated cookie list pulls from `wp_faz_cookies` so additions via the scanner are reflected at the next render. A non-removable disclaimer at the bottom of every generated policy makes explicit that the templates are starting points, not legal advice.
+- New REST API under `faz/v1/cookie-policy/*` (`/settings` GET/POST, `/preview` POST) — `manage_options` + nonce. Preview endpoint renders without persisting (US-05).
+- Versioning hash emitted as `<meta name="faz-policy-version">` so a future re-prompt mechanism can detect template-or-data drift (Spec FR-07, Constitution VI).
+- `faz_cookie_policy_data` filter — site builders can inject custom placeholders before template substitution.
+
+### Notes
+
+This release ships only the Cookie Policy Generator scope of Spec 002 (the `feat/cookie-policy-generator` branch). The geo-routing v2 work tracked in Spec 001 is on a separate branch (`feat/geo-routing-v2-jurisdictional-rulesets`, PR #115) and lands independently.
+
 ## [1.14.3] — 2026-05-19
 
 ### Added
