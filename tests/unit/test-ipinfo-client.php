@@ -95,7 +95,9 @@ echo "\n== Ipinfo_Client + Secrets — unit tests (T020) ==\n\n";
 
 $enc = Secrets::encrypt( 'svn_secret_token_42' );
 assert_true( strlen( $enc ) > 3, 'Secrets::encrypt produces non-empty output' );
-assert_true( 0 === strpos( $enc, 'v1:' ), 'Encrypted blob starts with v1: version prefix' );
+// L1-SP1-S003 fix (1.15.0): v2 format = 'v2:<8-hex-keyhint>:<base64>'.
+assert_true( 0 === strpos( $enc, 'v2:' ), 'Encrypted blob starts with v2: version prefix (post L1-SP1-S003 fix)' );
+assert_true( preg_match( '/^v2:[0-9a-f]{8}:/', $enc ) === 1, 'v2 prefix carries 8-hex keyhint for salt-rotation detection' );
 
 $dec = Secrets::decrypt( $enc );
 assert_eq( $dec, 'svn_secret_token_42', 'Secrets::decrypt roundtrips encrypted plaintext' );
