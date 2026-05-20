@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/ruleset.schema.json",
+  "id": "pipa-korea",
+  "version": "1.0.0",
+  "display_name": "PIPA — South Korea (PIPC)",
+  "law_references": [
+    "PIPA (riv. 2024)"
+  ],
+  "applies_to": {
+    "countries": [
+      "KR"
+    ]
+  },
+  "model": "opt-in",
+  "native_lang": "ko",
+  "official_resources_url": [
+    "https://www.pipc.go.kr/eng/"
+  ],
+  "signals": {
+    "tcf_v22": false,
+    "gpp": {
+      "enabled": false,
+      "section": null
+    },
+    "gpc_honored": false,
+    "gpc_required": false,
+    "dnt_honored": false,
+    "cmv2": {
+      "ad_storage": "denied",
+      "analytics_storage": "denied",
+      "ad_user_data": "denied",
+      "ad_personalization": "denied",
+      "personalization_storage": "denied",
+      "functionality_storage": "granted",
+      "security_storage": "granted"
+    }
+  },
+  "ui": {
+    "equal_weight_buttons": true,
+    "donotsell_link_required": false,
+    "sensitive_separate_optin": true,
+    "revisit_widget_required": true,
+    "default_categories": {
+      "necessary": "granted-locked",
+      "functional": "denied",
+      "analytics": "denied",
+      "marketing": "denied",
+      "profiling": "denied"
+    }
+  },
+  "cross_border_notes": null,
+  "_meta": {
+    "behavior_review_date": "2026-05-20",
+    "next_review_due": "2027-05-20",
+    "notes": "Stretto opt-in. PIPC sanzioni fino a 3% fatturato."
+  }
+}

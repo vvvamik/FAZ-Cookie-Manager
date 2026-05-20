@@ -131,6 +131,22 @@ Service URL:
 Terms of Service / Privacy Policy:
 * https://ip-api.com/docs/legal
 
+= ipinfo.io (geo-routing v2 only) =
+
+Used for VPN/proxy/Tor detection when the admin opts in to enhanced geo detection via Settings → Geo-routing → ipinfo settings. The plugin sends the visitor IP to ipinfo.io to determine whether the visitor is masking their location; when VPN is detected, the most-protective rule-set is applied regardless of the visitor's apparent country.
+
+Triggered when: a frontend page renders the banner AND the admin has configured an ipinfo API key AND has explicitly attested to having a DPF / SCC / DPA agreement with ipinfo.io for cross-border data transfer of EU/UK visitor IPs. Without the admin opt-in, ipinfo is NEVER called.
+
+Data sent: the visitor's IP address (in cleartext, as required by ipinfo's lookup contract), the configured API key, and standard HTTP request headers. The plugin caches the VPN classification locally for 24 hours hash-keyed by the IP (with monthly salt rotation) so repeat visitors do not trigger fresh calls.
+
+Service URL:
+* https://ipinfo.io/{ip}/privacy
+
+Terms of Service / Privacy Policy:
+* https://ipinfo.io/terms-of-service
+* https://ipinfo.io/privacy-policy
+* DPA (Data Processing Agreement) available on request: https://ipinfo.io/contact
+
 = Plugin REST endpoint /faz/v1/banner (public) =
 
 Used by the plugin's own front-end JavaScript (`script.js`) to fetch the per-language / per-country banner payload after the page has loaded. This is an INTERNAL endpoint hosted by the plugin on the same WordPress install — no third-party network call leaves the visitor's browser to a remote service. It is documented here only because the response carries `bannerSlug` and `activeLaw`, two strings that describe which banner profile and which legal regime (gdpr / ccpa) currently applies to the visitor.
@@ -294,6 +310,14 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.15.0 =
+* Feature: Geo-routing v2 — jurisdictional rule-sets. 47 ruleset JSON files cover EU (gdpr-strict + 7 country-specific), UK (uk-gdpr-pecr), 19 US states with privacy law (CCPA + CPA + CTDPA + VCDPA + UCPA + ICDPA + TIPA + MCDPA + TDPSA + OCPA + FDBR + Delaware + NJDPL + NHPL + KCDPA + MODPA + MCDPA + RIDTPPA + ICDPA), 18 international (LGPD/PIPL/APPI/PIPA/POPIA/PDPA-Singapore/Thailand/Vietnam/India/Malaysia/AU/NZ/UAE/KSA/Israel/Turkey/Canada/Quebec Law 25), plus most-protective fallback for unknown / VPN visitors.
+* Feature: New `admin/modules/geo-routing/` module with REST API (`/faz/v1/geo/*`), admin tab UI (status / coverage / overrides / preview / ipinfo / PIPL), field-by-field per-country override editor using dot-notation deltas.
+* Feature: VPN/proxy/Tor detection via ipinfo.io (opt-in, gated by admin DPF/SCC attestation). When VPN detected, the most-protective ruleset is forced regardless of apparent country. API key encrypted at rest.
+* Feature: PIPL cross-border attestation UI (audit-trail only).
+* Migration: `wp_faz_consent_logs` schema gains 7 NULL-default columns (`country_at_consent`, `region_at_consent`, `ruleset_id_at_consent`, `signal_gpc_received`, `signal_dnt_received`, `tc_string`, `gpp_string`). Online DDL on MySQL 5.7.6+ / MariaDB 10.3+.
+* External Services: new `ipinfo.io` entry documents the opt-in VPN detection lookup.
 
 = 1.14.3 =
 * Filter: new `faz_country_detection_consensus` filter, introduced with **2 arguments** (`$require_consensus`, `$votes`). When the filter resolves to `true` AND at least two detection sources disagree on the visitor country, `Geolocation::detect_country()` returns an empty string (fail-open — banner is shown to everyone). Off by default to preserve the CF-first priority order. Plugins that legitimately need the visitor IP for their own logic should hook `faz_visitor_country` instead, which exposes it for trusted overrides and test fixtures.

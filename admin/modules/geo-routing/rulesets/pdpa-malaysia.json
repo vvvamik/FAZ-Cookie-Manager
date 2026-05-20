@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/ruleset.schema.json",
+  "id": "pdpa-malaysia",
+  "version": "1.0.0",
+  "display_name": "PDPA — Malaysia",
+  "law_references": [
+    "PDPA 2010 + emend. 2024"
+  ],
+  "applies_to": {
+    "countries": [
+      "MY"
+    ]
+  },
+  "model": "opt-in",
+  "native_lang": "ms",
+  "official_resources_url": [
+    "https://www.pdp.gov.my/jpdpv2/"
+  ],
+  "signals": {
+    "tcf_v22": false,
+    "gpp": {
+      "enabled": false,
+      "section": null
+    },
+    "gpc_honored": false,
+    "gpc_required": false,
+    "dnt_honored": false,
+    "cmv2": {
+      "ad_storage": "denied",
+      "analytics_storage": "denied",
+      "ad_user_data": "denied",
+      "ad_personalization": "denied",
+      "personalization_storage": "denied",
+      "functionality_storage": "granted",
+      "security_storage": "granted"
+    }
+  },
+  "ui": {
+    "equal_weight_buttons": true,
+    "donotsell_link_required": false,
+    "sensitive_separate_optin": false,
+    "revisit_widget_required": true,
+    "default_categories": {
+      "necessary": "granted-locked",
+      "functional": "denied",
+      "analytics": "denied",
+      "marketing": "denied",
+      "profiling": "denied"
+    }
+  },
+  "cross_border_notes": null,
+  "_meta": {
+    "behavior_review_date": "2026-05-20",
+    "next_review_due": "2027-05-20",
+    "notes": "Opt-in. Emend. 2024 added penalties."
+  }
+}

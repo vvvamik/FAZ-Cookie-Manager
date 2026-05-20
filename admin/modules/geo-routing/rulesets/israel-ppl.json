@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/ruleset.schema.json",
+  "id": "israel-ppl",
+  "version": "1.0.0",
+  "display_name": "Privacy Protection Law — Israel",
+  "law_references": [
+    "Privacy Protection Law 5741-1981 + emend. 13/2024"
+  ],
+  "applies_to": {
+    "countries": [
+      "IL"
+    ]
+  },
+  "model": "opt-in",
+  "native_lang": "he",
+  "official_resources_url": [
+    "https://www.gov.il/he/Departments/the_privacy_protection_authority"
+  ],
+  "signals": {
+    "tcf_v22": false,
+    "gpp": {
+      "enabled": false,
+      "section": null
+    },
+    "gpc_honored": false,
+    "gpc_required": false,
+    "dnt_honored": false,
+    "cmv2": {
+      "ad_storage": "denied",
+      "analytics_storage": "denied",
+      "ad_user_data": "denied",
+      "ad_personalization": "denied",
+      "personalization_storage": "denied",
+      "functionality_storage": "granted",
+      "security_storage": "granted"
+    }
+  },
+  "ui": {
+    "equal_weight_buttons": true,
+    "donotsell_link_required": false,
+    "sensitive_separate_optin": false,
+    "revisit_widget_required": true,
+    "default_categories": {
+      "necessary": "granted-locked",
+      "functional": "denied",
+      "analytics": "denied",
+      "marketing": "denied",
+      "profiling": "denied"
+    }
+  },
+  "cross_border_notes": null,
+  "_meta": {
+    "behavior_review_date": "2026-05-20",
+    "next_review_due": "2027-05-20",
+    "notes": "Opt-in. PPA regulator."
+  }
+}
