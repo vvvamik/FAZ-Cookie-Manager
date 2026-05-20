@@ -30,9 +30,9 @@ Trasferimenti internazionali (Art. 33-36 LGPD): paesi con protezione adeguata / 
 
 ## Diritti del titolare (Art. 18 LGPD)
 
-Conferma, accesso, correzione, anonimizzazione/cancellazione, portabilità, info su condivisioni, info su conseguenze del non-consenso, revoca del consenso (Art. 8 § 5).
+Conferma, accesso, correzione, anonimizzazione/cancellazione, portabilità, informazioni su condivisioni, informazioni su conseguenze del non-consenso, revoca del consenso (Art. 8 § 5).
 
-Esercita questi diritti scrivendo al DPO **{{DPO_EMAIL}}** o al controllore **{{COMPANY_EMAIL}}**.
+Esercita questi diritti scrivendo al DPO **{{DPO_EMAIL}}** o al titolare **{{COMPANY_EMAIL}}**.
 
 ## Autorità
 

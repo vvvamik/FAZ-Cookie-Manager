@@ -34,7 +34,7 @@ NÃO coletamos Informações Pessoais Sensíveis sem opt-in explícito, nem dado
 
 ## Direitos CCPA/CPRA
 
-Right to Know, Delete, Correct, Opt-Out, Limit, Non-Discrimination, Portabilidade. E-mail **{{COMPANY_EMAIL}}** — resposta em 45 dias.
+Direito de saber, eliminar, corrigir, optar pela exclusão da venda/compartilhamento, limitar o uso de Informações Pessoais Sensíveis, não discriminação, portabilidade. E-mail **{{COMPANY_EMAIL}}** — resposta em 45 dias.
 
 ## Global Privacy Control
 

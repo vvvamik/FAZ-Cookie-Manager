@@ -374,11 +374,29 @@ class Renderer {
 	 * @return string Policy version hash (also used as data-attribute value).
 	 */
 	private static function register_version_meta( $template_path, array $data ) {
+		static $registered = false;
+		static $static_hash = '';
 		$hash = Generator::policy_version_hash( $template_path, $data );
-		if ( did_action( 'wp_head' ) === 0 ) {
-			add_action( 'wp_head', function () use ( $hash ) {
-				echo '<meta name="faz-policy-version" content="' . esc_attr( $hash ) . '">' . "\n";
+		// Multiple shortcodes on the same page must not register multiple
+		// add_action callbacks (would emit duplicate <meta> tags). Guard
+		// with a static flag; the first call stashes its hash, the closure
+		// reads the closed-over value at fire time.
+		if ( ! $registered && did_action( 'wp_head' ) === 0 ) {
+			$static_hash  = $hash;
+			$registered_ref = &$static_hash; // closure captures by reference so the
+			                                  // hash can still update if later renders
+			                                  // happen before wp_head fires.
+			add_action( 'wp_head', function () use ( &$registered_ref ) {
+				echo '<meta name="faz-policy-version" content="' . esc_attr( $registered_ref ) . '">' . "\n";
 			}, 99 );
+			$registered = true;
+		} elseif ( $registered ) {
+			// Subsequent shortcode renders on the same page update the stash
+			// to whatever the last render produced. The closure echoes the
+			// final value when wp_head fires (which is BEFORE the_content
+			// runs in canonical rendering, but for shortcodes called via
+			// AJAX / REST `template_redirect` will have fired before render).
+			$static_hash = $hash;
 		}
 		return $hash;
 	}
@@ -446,7 +464,7 @@ class Renderer {
 
 	private static function jurisdiction_display_name( $jurisdiction, $lang ) {
 		$names = array(
-			'gdpr-strict'     => array( 'en' => 'GDPR (EU/EEA/UK)', 'it' => 'GDPR (UE/SEE/UK)', 'fr' => 'RGPD (UE/EEE/RU)', 'de' => 'DSGVO (EU/EWR/UK)', 'es' => 'RGPD (UE/EEE/RU)', 'pt-BR' => 'GDPR (UE/EEE/RU)' ),
+			'gdpr-strict'     => array( 'en' => 'GDPR (EU/EEA/UK)', 'it' => 'GDPR (UE/SEE/UK)', 'fr' => 'RGPD (UE/EEE/UK)', 'de' => 'DSGVO (EU/EWR/UK)', 'es' => 'RGPD (UE/EEE/UK)', 'pt-BR' => 'GDPR (UE/EEE/UK)' ),
 			'ccpa-california' => array( 'en' => 'CCPA/CPRA (California)', 'it' => 'CCPA/CPRA (California)', 'fr' => 'CCPA/CPRA (Californie)', 'de' => 'CCPA/CPRA (Kalifornien)', 'es' => 'CCPA/CPRA (California)', 'pt-BR' => 'CCPA/CPRA (Califórnia)' ),
 			'lgpd-brazil'     => array( 'en' => 'LGPD (Brazil)', 'it' => 'LGPD (Brasile)', 'fr' => 'LGPD (Brésil)', 'de' => 'LGPD (Brasilien)', 'es' => 'LGPD (Brasil)', 'pt-BR' => 'LGPD (Brasil)' ),
 		);

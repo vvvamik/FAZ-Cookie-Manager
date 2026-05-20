@@ -142,12 +142,12 @@ $rest_url   = esc_url( rest_url( 'faz/v1/cookie-policy/' ) );
 					<label for="cp-default-lang"><?php esc_html_e( 'Force a specific language (otherwise follows visitor locale)', 'faz-cookie-manager' ); ?></label>
 					<select id="cp-default-lang" name="default_lang" class="faz-select">
 						<option value=""><?php esc_html_e( 'Follow visitor locale (recommended)', 'faz-cookie-manager' ); ?></option>
-						<option value="en">English</option>
-						<option value="it">Italiano</option>
-						<option value="fr">Français</option>
-						<option value="de">Deutsch</option>
-						<option value="es">Español</option>
-						<option value="pt-BR">Português (Brasil)</option>
+						<option value="en"><?php esc_html_e( 'English', 'faz-cookie-manager' ); ?></option>
+						<option value="it"><?php esc_html_e( 'Italian', 'faz-cookie-manager' ); ?></option>
+						<option value="fr"><?php esc_html_e( 'French', 'faz-cookie-manager' ); ?></option>
+						<option value="de"><?php esc_html_e( 'German', 'faz-cookie-manager' ); ?></option>
+						<option value="es"><?php esc_html_e( 'Spanish', 'faz-cookie-manager' ); ?></option>
+						<option value="pt-BR"><?php esc_html_e( 'Portuguese (Brazil)', 'faz-cookie-manager' ); ?></option>
 					</select>
 				</div>
 			</div>

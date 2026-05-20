@@ -30,7 +30,7 @@ Internationale Übermittlungen (Art. 33-36 LGPD): angemessenes Schutzniveau / St
 
 ## Rechte (Art. 18 LGPD)
 
-Bestätigung, Zugang, Berichtigung, Anonymisierung/Löschung, Portabilität, Info über Weitergabe, Info über Folgen der Nicht-Einwilligung, Widerruf (Art. 8 § 5).
+Bestätigung, Zugang, Berichtigung, Anonymisierung/Löschung, Portabilität, Informationen über Weitergabe, Informationen über Folgen der Nicht-Einwilligung, Widerruf (Art. 8 § 5).
 
 Kontaktieren Sie den DPO **{{DPO_EMAIL}}** oder den Verantwortlichen **{{COMPANY_EMAIL}}**.
 

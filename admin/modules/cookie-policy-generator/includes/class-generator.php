@@ -80,6 +80,15 @@ class Generator {
 		if ( ! in_array( $jurisdiction, self::JURISDICTIONS, true ) ) {
 			return null;
 		}
+		// Defense-in-depth path-traversal hardening: even though only callers
+		// inside the module reach this method, an external integrator could
+		// theoretically pass a `lang` like "../../../wp-config" via a filter
+		// or future REST endpoint. Validate against the whitelist before
+		// composing any file path.
+		$lang = (string) $lang;
+		if ( ! in_array( $lang, self::LANGUAGES, true ) ) {
+			$lang = self::NATIVE_LANG[ $jurisdiction ] ?? 'en';
+		}
 		$dir = self::templates_dir() . '/' . $jurisdiction;
 		$candidates = array( $lang );
 		// Native fallback if different from requested.

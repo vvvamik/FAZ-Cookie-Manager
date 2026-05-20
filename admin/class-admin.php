@@ -680,6 +680,24 @@ class Admin {
 					'systemStatus'             => array(
 						'copied'                   => __( 'Status copied to clipboard!', 'faz-cookie-manager' ),
 					),
+					// Cookie Policy generator (admin/assets/js/pages/cookie-policy.js).
+					'cookiePolicy'             => array(
+						'loadFailed'               => __( 'Load failed', 'faz-cookie-manager' ),
+						'saving'                   => __( 'Saving…', 'faz-cookie-manager' ),
+						'saved'                    => __( 'Saved.', 'faz-cookie-manager' ),
+						'saveFailed'               => __( 'Save failed', 'faz-cookie-manager' ),
+						'previewFailed'            => __( 'Preview failed', 'faz-cookie-manager' ),
+						'svcGa4'                   => __( 'Google Analytics 4', 'faz-cookie-manager' ),
+						'svcGtm'                   => __( 'Google Tag Manager', 'faz-cookie-manager' ),
+						'svcMeta'                  => __( 'Meta (Facebook) Pixel', 'faz-cookie-manager' ),
+						'svcTiktok'                => __( 'TikTok Pixel', 'faz-cookie-manager' ),
+						'svcLinkedin'              => __( 'LinkedIn Insight Tag', 'faz-cookie-manager' ),
+						'svcMsuet'                 => __( 'Microsoft UET', 'faz-cookie-manager' ),
+						'svcClarity'               => __( 'Microsoft Clarity', 'faz-cookie-manager' ),
+						'svcCf'                    => __( 'Cloudflare', 'faz-cookie-manager' ),
+						'svcRecaptcha'             => __( 'Google reCAPTCHA', 'faz-cookie-manager' ),
+						'svcHotjar'                => __( 'Hotjar', 'faz-cookie-manager' ),
+					),
 				),
 			)
 		);

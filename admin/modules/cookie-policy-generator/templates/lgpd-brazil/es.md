@@ -30,7 +30,7 @@ Transferencias internacionales (Art. 33-36 LGPD): países con protección adecua
 
 ## Derechos (Art. 18 LGPD)
 
-Confirmación, acceso, corrección, anonimización/eliminación, portabilidad, info sobre compartir, info sobre consecuencias de no consentir, revocación (Art. 8 § 5).
+Confirmación, acceso, corrección, anonimización/eliminación, portabilidad, información sobre compartir, información sobre consecuencias de no consentir, revocación (Art. 8 § 5).
 
 Contacte al DPO **{{DPO_EMAIL}}** o al controlador **{{COMPANY_EMAIL}}**.
 

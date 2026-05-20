@@ -256,7 +256,12 @@ class Cookie_Policy_Api {
 				if ( '' === $key || strlen( $key ) > 64 ) {
 					continue;
 				}
-				$cleaned[ $key ] = $this->trim_clip( $v, 5000 );
+				// Section overrides are markdown bodies that REPLACE a template
+				// section — they need newlines, lists, paragraphs intact.
+				// trim_clip() uses sanitize_text_field() which collapses
+				// whitespace and strips newlines; for this field we use the
+				// multiline-safe variant.
+				$cleaned[ $key ] = $this->trim_clip_multiline( $v, 5000 );
 			}
 			$out['section_overrides'] = $cleaned;
 		}
@@ -265,7 +270,7 @@ class Cookie_Policy_Api {
 	}
 
 	/**
-	 * sanitize + trim + length cap.
+	 * sanitize + trim + length cap. Single-line (sanitize_text_field).
 	 *
 	 * @param mixed $val
 	 * @param int   $max
@@ -276,6 +281,26 @@ class Cookie_Policy_Api {
 			return '';
 		}
 		$v = sanitize_text_field( (string) $val );
+		$v = trim( $v );
+		if ( strlen( $v ) > $max ) {
+			$v = substr( $v, 0, $max );
+		}
+		return $v;
+	}
+
+	/**
+	 * sanitize + trim + length cap, multiline-safe. Preserves newlines so
+	 * markdown structure (lists, paragraphs, headings) survives.
+	 *
+	 * @param mixed $val
+	 * @param int   $max
+	 * @return string
+	 */
+	private function trim_clip_multiline( $val, $max ) {
+		if ( ! is_scalar( $val ) ) {
+			return '';
+		}
+		$v = sanitize_textarea_field( (string) $val );
 		$v = trim( $v );
 		if ( strlen( $v ) > $max ) {
 			$v = substr( $v, 0, $max );

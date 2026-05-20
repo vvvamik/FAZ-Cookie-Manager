@@ -21,10 +21,33 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'FAZ_VERSION', '1.16.0-test' );
 define( 'MINUTE_IN_SECONDS', 60 );
 
-// Minimal WP polyfills used by the classes under test.
-function esc_url( $u ) { return $u; }
-function esc_html( $v ) { return $v; }
-function wp_json_encode( $v ) { return json_encode( $v ); }
+// Minimal WP polyfills used by the classes under test. These are
+// test-realistic sanitizers (NOT no-ops) so security assertions on the
+// Generator's link rendering (esc_url + esc_html in markdown_to_html())
+// actually exercise the escaping path. They mirror the safety contract
+// of WP's real implementations without dragging in WP core.
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( $v ) {
+		return htmlspecialchars( (string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+	}
+}
+if ( ! function_exists( 'esc_url' ) ) {
+	function esc_url( $u ) {
+		$u = (string) $u;
+		// Drop dangerous schemes: javascript:, data:, vbscript:
+		if ( preg_match( '/^\s*(?:javascript|data|vbscript):/i', $u ) ) {
+			return '';
+		}
+		// Strip control chars + CR/LF.
+		$u = preg_replace( '/[\x00-\x1F\x7F]/', '', $u );
+		return $u;
+	}
+}
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $v ) {
+		return json_encode( $v );
+	}
+}
 
 require_once dirname( __DIR__, 2 ) . '/admin/modules/cookie-policy-generator/includes/class-generator.php';
 use FazCookie\Admin\Modules\Cookie_Policy_Generator\Includes\Generator;
@@ -128,6 +151,18 @@ $html = Generator::markdown_to_html( '[click](javascript:alert(1))' );
 assert_false( false !== strpos( $html, '<a href="javascript:' ), 'javascript: scheme NOT rendered as clickable <a href>' );
 assert_false( false !== strpos( $html, 'href="javascript' ), 'No javascript scheme in any href attribute' );
 
+// Anti-XSS: when a malicious http link slips through the markdown regex
+// (only http/https are accepted), the esc_url polyfill must still strip
+// dangerous control chars from the URL. This test relies on the polyfills
+// being REAL sanitizers (not no-ops), confirming the security suite is
+// exercising the actual escape path.
+$html = Generator::markdown_to_html( "[ok](https://example.test/path)" );
+assert_contains( $html, '<a href="https://example.test/path"', 'Valid https link renders with esc_url' );
+// Link text containing HTML-special chars must be entity-escaped.
+$html = Generator::markdown_to_html( '[<script>x</script>](https://example.test/)' );
+assert_false( false !== strpos( $html, '<script>' ), 'Link text HTML escaped (no raw <script>)' );
+assert_contains( $html, '&lt;script&gt;', 'Link text rendered as escaped entities' );
+
 // Inline code
 $html = Generator::markdown_to_html( 'Set `option` to true' );
 assert_contains( $html, '<code>option</code>', 'Inline code' );
@@ -179,6 +214,20 @@ assert_eq(
 	'Unknown jurisdiction → null (not in scope v1)'
 );
 
+// Path-traversal hardening: a malicious $lang like "../../wp-config" must
+// be rejected at the whitelist gate, not used to compose any filesystem
+// path. Resolves to native-lang fallback instead.
+$traversal_path = Generator::resolve_template_path( 'gdpr-strict', '../../../wp-config' );
+assert_true(
+	is_string( $traversal_path ) && false === strpos( $traversal_path, '..' ),
+	'Path traversal in $lang rejected at whitelist gate'
+);
+// Verify it landed on the native-lang fallback (en for gdpr).
+assert_true(
+	is_string( $traversal_path ) && false !== strpos( $traversal_path, '/gdpr-strict/en.md' ),
+	'Invalid $lang falls back to gdpr-strict native lang (en)'
+);
+
 // ---------- Constants ----------
 
 assert_eq( count( Generator::JURISDICTIONS ), 3, '3 jurisdictions in scope v1' );
@@ -200,7 +249,9 @@ assert_eq( $h1, $h3, 'Same input → same hash (deterministic)' );
 
 // ---------- Real-world rendering smoke ----------
 
-$scaffold = file_get_contents( Generator::resolve_template_path( 'gdpr-strict', 'en' ) );
+$gdpr_path = Generator::resolve_template_path( 'gdpr-strict', 'en' );
+assert_true( is_string( $gdpr_path ) && '' !== $gdpr_path, 'gdpr-strict/en template path resolvable before read' );
+$scaffold = file_get_contents( $gdpr_path );
 $rendered = Generator::substitute( $scaffold, array(
 	'COMPANY_NAME'         => 'ACME Srl',
 	'COMPANY_ADDRESS'      => 'Via Roma 1, 00100 Roma, Italy',
@@ -221,7 +272,9 @@ assert_contains( $rendered, '12 months', 'Real template renders retention' );
 assert_false( strpos( $rendered, '{{' ) !== false, 'Real template: no leftover {{...}} tokens' );
 
 // Same for CCPA
-$ccpa_scaffold = file_get_contents( Generator::resolve_template_path( 'ccpa-california', 'en' ) );
+$ccpa_path = Generator::resolve_template_path( 'ccpa-california', 'en' );
+assert_true( is_string( $ccpa_path ) && '' !== $ccpa_path, 'ccpa-california/en template path resolvable before read' );
+$ccpa_scaffold = file_get_contents( $ccpa_path );
 $rendered = Generator::substitute( $ccpa_scaffold, array(
 	'COMPANY_NAME'        => 'ACME Inc',
 	'COMPANY_EMAIL'       => 'privacy@acme.test',
@@ -238,7 +291,9 @@ assert_contains( $rendered, 'Do Not Sell or Share', 'CCPA-EN template mentions D
 assert_false( strpos( $rendered, '{{' ) !== false, 'CCPA template: no leftover tokens' );
 
 // LGPD pt-BR — must mention Encarregado and ANPD
-$lgpd_scaffold = file_get_contents( Generator::resolve_template_path( 'lgpd-brazil', 'pt-BR' ) );
+$lgpd_path = Generator::resolve_template_path( 'lgpd-brazil', 'pt-BR' );
+assert_true( is_string( $lgpd_path ) && '' !== $lgpd_path, 'lgpd-brazil/pt-BR template path resolvable before read' );
+$lgpd_scaffold = file_get_contents( $lgpd_path );
 $rendered = Generator::substitute( $lgpd_scaffold, array(
 	'COMPANY_NAME'      => 'ACME Ltda',
 	'COMPANY_EMAIL'     => 'privacidade@acme.test',

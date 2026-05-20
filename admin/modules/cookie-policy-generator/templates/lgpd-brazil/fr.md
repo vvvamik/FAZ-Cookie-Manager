@@ -30,7 +30,7 @@ Transferts internationaux (Art. 33-36 LGPD) : pays à protection adéquate / cla
 
 ## Droits (Art. 18 LGPD)
 
-Confirmation, accès, correction, anonymisation/effacement, portabilité, info sur partages, info sur conséquences du non-consentement, révocation (Art. 8 § 5).
+Confirmation, accès, correction, anonymisation/effacement, portabilité, informations sur partages, informations sur conséquences du non-consentement, révocation (Art. 8 § 5).
 
 Contactez le DPO **{{DPO_EMAIL}}** ou le responsable **{{COMPANY_EMAIL}}**.
 

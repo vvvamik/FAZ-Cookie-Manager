@@ -16,6 +16,20 @@
 	var REST_URL   = root.dataset.fazRestUrl || '';
 	var REST_NONCE = root.dataset.fazRestNonce || '';
 
+	// ---------- i18n helper ----------
+	// Strings live in fazConfig.i18n.cookiePolicy.* (see admin/class-admin.php).
+	// Fallbacks ship the English default so the page degrades gracefully
+	// when the locale array is incomplete.
+	var FAZ_I18N = (window.fazConfig && window.fazConfig.i18n && window.fazConfig.i18n.cookiePolicy) || {};
+	function t(key, fallback) {
+		return (FAZ_I18N && FAZ_I18N[key]) || fallback;
+	}
+
+	// Per-request monotonic id used to discard stale preview responses
+	// when the user clicks Preview multiple times before the previous
+	// fetch resolved.
+	var previewRequestId = 0;
+
 	function api(method, path, body) {
 		var FAZ = window.FAZ;
 		var verb = String(method || 'GET').toUpperCase();
@@ -25,6 +39,10 @@
 				case 'POST': return FAZ.post('cookie-policy/' + path, body || {});
 			}
 		}
+		// Defensive fallback for the rare case faz-admin.js hasn't loaded
+		// yet (e.g. async script race in the WP admin head). The raw
+		// fetch path uses the fully-qualified REST_URL + nonce injected
+		// by class-admin.php.
 		return fetch(REST_URL + path, {
 			method:      verb,
 			credentials: 'same-origin',
@@ -40,17 +58,25 @@
 
 	// ---------- form ↔ settings serialization ----------
 
-	// Dot-path setter: setDeep(obj, "company.name", "ACME")
+	// Dot-path setter: setDeep(obj, "company.name", "ACME").
+	// Blocks prototype-pollution path segments: a malicious data-path attribute
+	// like "__proto__.toString" or "constructor.prototype.x" must NOT be able
+	// to walk up the prototype chain and mutate Object.prototype globally.
+	// We early-return on any segment matching the well-known dangerous keys.
+	var BLOCKED_KEYS = { '__proto__': true, 'prototype': true, 'constructor': true };
 	function setDeep(obj, path, value) {
 		var parts = path.split('.');
 		var cur = obj;
 		for (var i = 0; i < parts.length - 1; i++) {
+			if (BLOCKED_KEYS[parts[i]] === true) { return; }
 			if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) {
 				cur[parts[i]] = {};
 			}
 			cur = cur[parts[i]];
 		}
-		cur[parts[parts.length - 1]] = value;
+		var last = parts[parts.length - 1];
+		if (BLOCKED_KEYS[last] === true) { return; }
+		cur[last] = value;
 	}
 
 	function getDeep(obj, path, fallback) {
@@ -112,17 +138,20 @@
 		var container = document.getElementById('cp-services-list');
 		if (!container) { return; }
 		while (container.firstChild) { container.removeChild(container.firstChild); }
+		// Service labels are brand names; we still route them through t() so a
+		// translator can choose to localize ("Cloudflare" → "Cloudflare", but
+		// "Microsoft UET" might need clarification copy in some locales).
 		var services = [
-			{ id: 'ga4',       label: 'Google Analytics 4' },
-			{ id: 'gtm',       label: 'Google Tag Manager' },
-			{ id: 'meta',      label: 'Meta (Facebook) Pixel' },
-			{ id: 'tiktok',    label: 'TikTok Pixel' },
-			{ id: 'linkedin',  label: 'LinkedIn Insight Tag' },
-			{ id: 'msuet',     label: 'Microsoft UET' },
-			{ id: 'clarity',   label: 'Microsoft Clarity' },
-			{ id: 'cf',        label: 'Cloudflare' },
-			{ id: 'recaptcha', label: 'Google reCAPTCHA' },
-			{ id: 'hotjar',    label: 'Hotjar' }
+			{ id: 'ga4',       label: t( 'svcGa4',       'Google Analytics 4' ) },
+			{ id: 'gtm',       label: t( 'svcGtm',       'Google Tag Manager' ) },
+			{ id: 'meta',      label: t( 'svcMeta',      'Meta (Facebook) Pixel' ) },
+			{ id: 'tiktok',    label: t( 'svcTiktok',    'TikTok Pixel' ) },
+			{ id: 'linkedin',  label: t( 'svcLinkedin',  'LinkedIn Insight Tag' ) },
+			{ id: 'msuet',     label: t( 'svcMsuet',     'Microsoft UET' ) },
+			{ id: 'clarity',   label: t( 'svcClarity',   'Microsoft Clarity' ) },
+			{ id: 'cf',        label: t( 'svcCf',        'Cloudflare' ) },
+			{ id: 'recaptcha', label: t( 'svcRecaptcha', 'Google reCAPTCHA' ) },
+			{ id: 'hotjar',    label: t( 'svcHotjar',    'Hotjar' ) }
 		];
 		services.forEach(function (svc) {
 			var label = document.createElement('label');
@@ -181,22 +210,34 @@
 
 		api('GET', 'settings')
 			.then(function (data) { writeForm(data); })
-			.catch(function (err) { setStatus('Load failed: ' + err.message, 'error'); });
+			.catch(function (err) { setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + err.message, 'error'); });
 
 		document.getElementById('faz-cookie-policy-form').addEventListener('submit', function (e) {
 			e.preventDefault();
 			var payload = readForm();
-			setStatus('Saving...', '');
+			setStatus(t( 'saving', 'Saving…' ), '');
 			api('POST', 'settings', payload)
-				.then(function () { setStatus('Saved.', 'ok'); })
-				.catch(function (err) { setStatus('Save failed: ' + err.message, 'error'); });
+				.then(function () { setStatus(t( 'saved', 'Saved.' ), 'ok'); })
+				.catch(function (err) { setStatus(t( 'saveFailed', 'Save failed' ) + ': ' + err.message, 'error'); });
 		});
 
 		document.getElementById('cp-preview-btn').addEventListener('click', function () {
+			// Race-condition guard: if the user clicks Preview multiple times
+			// quickly the responses may resolve out of order. We capture the
+			// pre-increment id and only commit results whose id is still the
+			// latest. Older responses are silently dropped.
+			previewRequestId += 1;
+			var myReqId = previewRequestId;
 			var payload = readForm();
 			api('POST', 'preview', { settings: payload, lang: payload.default_lang || '', jurisdiction: payload.jurisdiction || '' })
-				.then(function (resp) { showPreview(resp.html || ''); })
-				.catch(function (err) { setStatus('Preview failed: ' + err.message, 'error'); });
+				.then(function (resp) {
+					if (myReqId !== previewRequestId) { return; } // stale response, drop
+					showPreview(resp.html || '');
+				})
+				.catch(function (err) {
+					if (myReqId !== previewRequestId) { return; } // stale error too
+					setStatus(t( 'previewFailed', 'Preview failed' ) + ': ' + err.message, 'error');
+				});
 		});
 
 		var modal = document.getElementById('cp-preview-modal');

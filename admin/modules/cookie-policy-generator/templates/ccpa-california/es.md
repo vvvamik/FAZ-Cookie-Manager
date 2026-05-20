@@ -69,6 +69,6 @@ Honramos la señal [Global Privacy Control](https://globalprivacycontrol.org/) c
 
 California Privacy Protection Agency: {{CA_PIPC_CONTACT}}, [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}}).
 
-## Contacto
+## Contacto de privacidad
 
 **{{COMPANY_EMAIL}}**

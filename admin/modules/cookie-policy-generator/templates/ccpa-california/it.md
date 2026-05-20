@@ -44,6 +44,6 @@ Onoriamo il segnale GPC come opt-out valido.
 
 California Privacy Protection Agency: {{CA_PIPC_CONTACT}}, [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}})
 
-## Contatto
+## Informazioni di contatto
 
 **{{COMPANY_EMAIL}}**
