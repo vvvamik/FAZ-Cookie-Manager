@@ -133,10 +133,22 @@ function formatWpCommand(args: string[]): string {
   return `${prefix} ${args.join(' ')}`;
 }
 
-export function wp(args: string[]): string {
+export type WpOptions = {
+  // When false, fail fast on any error — no transient retry. The general
+  // mutation channels (wpEval, setOption, deleteOption) opt out because
+  // a mid-MySQL transient ("server has gone away" / "Lost connection")
+  // could re-run the same INSERT/UPDATE against already-mutated state.
+  // Direct wp() callers that issue mutating subcommands not wrapped
+  // here (e.g. raw `wp(['post','create',...])`) should also pass
+  // allowRetry:false when the operation isn't idempotent.
+  allowRetry?: boolean;
+};
+
+export function wp(args: string[], options: WpOptions = {}): string {
   assertWpPath();
   const command = formatWpCommand(args);
-  const maxAttempts = 2; // 1 retry on transient error — a second failure is real.
+  const allowRetry = options.allowRetry !== false;
+  const maxAttempts = allowRetry ? 2 : 1; // 1 retry on transient error (read paths); fail-fast on opted-out mutations.
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -170,7 +182,11 @@ export function wp(args: string[]): string {
 }
 
 export function wpEval(code: string): string {
-  return wp(['eval', code]);
+  // PHP eval body can run arbitrary mutations. A transient "MySQL gone
+  // away" mid-execution would re-run the body against already-mutated
+  // state on retry, so we fail fast here. Read-only eval bodies that
+  // really need transient resilience should call wp() directly.
+  return wp(['eval', code], { allowRetry: false });
 }
 
 function rsyncDirectory(sourceDir: string, targetDir: string): void {
@@ -267,12 +283,14 @@ export function activatePlugins(slugs: string[], options: { tolerateFailures?: b
 }
 
 export function setOption(optionName: string, value: string): void {
-  wp(['option', 'update', optionName, value]);
+  // option update mutates wp_options; no transient retry — see wpEval rationale.
+  wp(['option', 'update', optionName, value], { allowRetry: false });
 }
 
 export function deleteOption(optionName: string): void {
   try {
-    wp(['option', 'delete', optionName]);
+    // option delete mutates wp_options; no transient retry — see wpEval rationale.
+    wp(['option', 'delete', optionName], { allowRetry: false });
   } catch {
     // Option may not exist yet.
   }
