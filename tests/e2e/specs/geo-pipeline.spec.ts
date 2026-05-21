@@ -16,7 +16,7 @@ import { test, expect } from '../fixtures/wp-fixture';
 import { wpEval } from '../utils/wp-env';
 
 test.describe('Geo_Routing pipeline (P3 — T026/T027)', () => {
-  test('admin override → resolves to gdpr-strict for IT', () => {
+  test('admin override IT → resolves to gdpr-italy ruleset', () => {
     const raw = wpEval(`
       add_filter( 'faz_geo_admin_override_country', function() { return 'IT'; } );
 
@@ -33,12 +33,15 @@ test.describe('Geo_Routing pipeline (P3 — T026/T027)', () => {
 
     const data = JSON.parse(raw);
     expect(data.country).toBe('IT');
-    // PR #115 added country-specific GDPR variants (gdpr-italy, gdpr-poland,
-    // gdpr-spain, gdpr-netherlands, ...). The test originally asserted the
-    // generic `gdpr-strict` fallback assuming no IT-specific ruleset existed —
-    // now IT correctly resolves to `gdpr-italy`. Match the family by prefix so
-    // the assertion stays green when more country variants are added.
-    expect(data.ruleset_id).toMatch(/^gdpr-/);
+    // Pin to gdpr-italy: PR #115 added country-specific GDPR variants
+    // (gdpr-italy, gdpr-poland, gdpr-spain, gdpr-netherlands, ...) and the
+    // _index.json maps IT → gdpr-italy. A prefix matcher /^gdpr-/ would
+    // accept any of 8 distinct gdpr-* IDs, silently passing if the
+    // _index.json mapping is corrupted and IT falls back to e.g. gdpr-strict
+    // — degrading the Italian visitor experience without surfacing in CI.
+    // Load-failure regressions still surface through the resolver's
+    // fallback-gdpr-most-protective path, which does NOT match `gdpr-italy`.
+    expect(data.ruleset_id).toBe('gdpr-italy');
     expect(data.source).toBe('admin_override');
     expect(data.has_ruleset_json).toBe(true);
   });

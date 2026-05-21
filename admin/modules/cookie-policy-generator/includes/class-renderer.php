@@ -54,6 +54,14 @@ class Renderer {
 	public static function render( $atts = array() ) {
 		$settings = (array) get_option( self::SETTINGS_OPTION, array() );
 
+		// On a fresh install (option missing) the frontend shortcode would
+		// otherwise emit a policy with empty company name / contact email
+		// while the admin form is showing blogname / admin_email defaults.
+		// Merge those same baseline defaults here so [faz_cookie_policy_v2]
+		// produces a coherent first-paint without requiring the admin to
+		// hit Save first. Existing saved values win on key collision.
+		$settings = array_replace_recursive( self::baseline_defaults(), $settings );
+
 		// FR-03 step 1: resolve language.
 		$lang = self::resolve_lang( $atts, $settings );
 
@@ -105,6 +113,38 @@ class Renderer {
 		// is emitted by trusted code (no user input reaches it un-escaped)
 		// and bypasses the kses pass.
 		return $wrapper_open . wp_kses_post( $html ) . $wrapper_close;
+	}
+
+	/**
+	 * Baseline defaults the shortcode falls back to on a fresh install.
+	 *
+	 * Mirrors `Cookie_Policy_Api::default_settings()` for the keys the
+	 * renderer actually consumes (company name / contact email / retention /
+	 * jurisdiction / privacy_policy_url). Kept narrow to avoid the renderer
+	 * carrying the API's schema as a hard dependency — the API still owns
+	 * the authoritative defaults for the admin form.
+	 *
+	 * @return array
+	 */
+	private static function baseline_defaults() {
+		return array(
+			'jurisdiction'         => 'gdpr-strict',
+			'company'              => array(
+				'name'     => (string) get_option( 'blogname', '' ),
+				'address'  => '',
+				'email'    => (string) get_option( 'admin_email', '' ),
+				'registry' => '',
+			),
+			'dpo'                  => array(
+				'name'    => '',
+				'email'   => '',
+				'address' => '',
+			),
+			'retention_months'     => 12,
+			'privacy_policy_url'   => '',
+			'third_party_services' => array(),
+			'section_overrides'    => array(),
+		);
 	}
 
 	/**

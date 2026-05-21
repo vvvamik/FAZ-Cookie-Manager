@@ -124,10 +124,22 @@ class Geo_Detector {
 	/**
 	 * Read CF-IPCountry header from $_SERVER.
 	 *
+	 * Trust gate: only honour the header when the request actually transits a
+	 * known proxy edge OR the operator has explicitly opted in via the legacy
+	 * `faz_trust_cf_ipcountry_header` filter (kept for parity with the
+	 * pre-Geo_Detector `FazCookie\Includes\Geolocation` contract). Without
+	 * this gate a client that reaches the origin directly can spoof
+	 * `CF-IPCountry: DE` and steer the resolver as `cf_header` — see
+	 * `is_trusted_proxy()` for the CIDR allowlist (Cloudflare ranges plus
+	 * `faz_geo_trusted_proxy_cidrs` extensions).
+	 *
 	 * @return string Country code (uppercase) or empty.
 	 */
 	private function get_cf_country() {
 		if ( empty( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) {
+			return '';
+		}
+		if ( ! $this->cf_header_is_trusted() ) {
 			return '';
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -142,12 +154,38 @@ class Geo_Detector {
 	}
 
 	/**
+	 * Whether the CF-IPCountry header is trustworthy on this request.
+	 *
+	 * Matches `resolve_client_ip()`'s CF-Connecting-IP gate: REMOTE_ADDR in
+	 * Cloudflare's published proxy CIDRs (extendable via
+	 * `faz_geo_trusted_proxy_cidrs`) OR explicit operator opt-in via
+	 * `faz_trust_cf_ipcountry_header` (the legacy `Geolocation` contract).
+	 *
+	 * @return bool
+	 */
+	private function cf_header_is_trusted() {
+		$remote_addr = ! empty( $_SERVER['REMOTE_ADDR'] )
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			? (string) $_SERVER['REMOTE_ADDR']
+			: '';
+		if ( '' !== $remote_addr && $this->is_trusted_proxy( $remote_addr ) ) {
+			return true;
+		}
+		return (bool) apply_filters( 'faz_trust_cf_ipcountry_header', false );
+	}
+
+	/**
 	 * Read CF-Region header if exposed by CF Workers / custom config.
+	 *
+	 * Honours the same trust gate as `get_cf_country()`.
 	 *
 	 * @return string ISO 3166-2 or empty.
 	 */
 	private function get_cf_region() {
 		if ( empty( $_SERVER['HTTP_CF_REGION_CODE'] ) || empty( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) {
+			return '';
+		}
+		if ( ! $this->cf_header_is_trusted() ) {
 			return '';
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
