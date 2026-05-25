@@ -83,24 +83,24 @@ abstract class Base_Controller {
 	public function delete_cache() {
 		Cache::delete( $this->cache_group );
 
-		// Flush the underlying object-cache group when supported so legacy keys
-		// are removed too; prefix invalidation above already handles active keys.
-		// Both wp_cache_supports() and wp_cache_flush_group() ship with WP 6.1+;
-		// the function_exists() gates keep us safe on the declared 5.0 minimum.
-		// Plugin Check flags these by NAME without seeing the runtime gate, so
-		// we silence its WP-version probe explicitly here.
-		// phpcs:ignore PluginCheck.CodeAnalysis.RequiredWPFunctionVersion.NewerVersion
-		if ( function_exists( 'wp_cache_flush_group' ) && function_exists( 'wp_cache_supports' ) && wp_cache_supports( 'flush_group' ) ) {
-			// phpcs:ignore PluginCheck.CodeAnalysis.RequiredWPFunctionVersion.NewerVersion
-			wp_cache_flush_group( $this->cache_group );
-		} else {
-			// Fallback: delete known legacy cache keys when flush_group unavailable.
-			wp_cache_delete( $this->cache_group . '_category_all', $this->cache_group );
-			// Delete per-category keys (IDs are small integers).
-			for ( $i = 1; $i <= 50; $i++ ) {
-				wp_cache_delete( $this->cache_group . '_category_' . $i, $this->cache_group );
-				wp_cache_delete( $this->cache_group . '_' . $i, $this->cache_group );
-			}
+		// Manually delete known legacy cache keys for the controller's group.
+		// Prefix invalidation above (Cache::delete) already handles active keys
+		// via epoch bump; this loop removes any cold leftovers minted before
+		// the bump that would otherwise survive in the object cache.
+		//
+		// Earlier revisions used wp_cache_flush_group() on WP 6.1+ as a faster
+		// atomic flush, gated by function_exists() for WP 5.0 compatibility.
+		// Plugin Check's wp_function_not_compatible_with_requires_wp probe is
+		// a category check that runs OUTSIDE phpcs (so // phpcs:ignore does
+		// not silence it). To keep the declared Requires at least: 5.0 contract
+		// without bumping to 6.1 we ship only the manual loop — slightly more
+		// wp_cache_delete() calls on save paths, but no functional difference
+		// (the epoch bump above is what actually invalidates live reads).
+		wp_cache_delete( $this->cache_group . '_category_all', $this->cache_group );
+		// Delete per-category keys (IDs are small integers).
+		for ( $i = 1; $i <= 50; $i++ ) {
+			wp_cache_delete( $this->cache_group . '_category_' . $i, $this->cache_group );
+			wp_cache_delete( $this->cache_group . '_' . $i, $this->cache_group );
 		}
 
 		wp_cache_delete( 'faz_settings', 'options' );
