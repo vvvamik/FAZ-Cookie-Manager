@@ -31,6 +31,7 @@ Most cookie consent plugins follow the same pattern: a free version with cripple
 | IAB TCF v2.3 + GVL | No | Yes | **Yes** |
 | Geo-targeting | No | Yes | **Yes** |
 | Multi-language (180+) | No | Yes | **Yes** |
+| Cookie Policy generator | Paid add-on | Yes | **Yes (NEW in 1.16.0)** |
 | Cloud dependency | No | **Yes** | **No** |
 | Price | Free | $10-50/mo | **Free forever** |
 
@@ -209,6 +210,21 @@ Integrates the [Open Cookie Database](https://github.com/fabiodalez-dev/Open-Coo
 - **Manual update** via admin UI button
 - **Exact + wildcard matching**: e.g., `_gat_` prefix matches `_gat_UA-12345`
 - **Auto-categorize**: One-click bulk categorization
+
+### Cookie Policy Generator (NEW in 1.16.0)
+
+Generate a jurisdiction-aware Cookie Policy page directly from your admin — no copy-pasting templates from a privacy-lawyer blog, no paying $10/month for "policy creation" as a premium feature.
+
+- **Jurisdiction-aware templates**: GDPR (EU/EEA/UK), CCPA/CPRA (California), LGPD (Brazil). Each shipped with its own template scaffold, legal references, and required sections for that framework.
+- **Multilingual out of the box**: en, it, fr, de, es, pt-BR. Override per render with `[faz_cookie_policy_complete lang="it"]` or let the visitor's browser language drive the choice. 18 scaffolds total (3 jurisdictions × 6 languages).
+- **Auto-populated cookie inventory**: pulls live from `wp_faz_cookies`, so anything the scanner adds is reflected at the next render with its category, duration, and description.
+- **Filled with your company data**: name, address, DPO email, third-party services, retention period. Configured once via the admin form, stored in `faz_cookie_policy_data`. Never seeded from `admin_email` or `blogname` (PII protection — operator must explicitly fill the form).
+- **Non-removable disclaimer**: every generated policy ends with a footer making explicit that the templates are starting points, not legal advice. The disclaimer is hardcoded in the renderer, not in the template files, so admin section overrides cannot suppress it.
+- **Versioning hash** for material-change detection: `data-faz-policy-version` attribute on the rendered article tracks drift across template + data changes. Display-only fields (`LAST_UPDATED_DATE`) are excluded so the hash doesn't drift on the calendar.
+- **REST API** under `faz/v1/cookie-policy/*` (settings GET/POST, preview POST) — `manage_options` + nonce.
+- **Live preview** from the admin form via a sandboxed iframe modal — iterate without persisting.
+- **`faz_cookie_policy_data` filter** for site builders who want to inject custom placeholders before template substitution.
+- **Backwards compatible**: the long-standing `[faz_cookie_policy]` shortcode (with `site_name` / `contact` / `show_table` attributes from 1.7.0) is unchanged. The standalone `[faz_cookie_table]` shortcode and matching `faz/cookie-table` Gutenberg block still work for embedding just the cookie inventory table on any page.
 
 ### Google Consent Mode v2
 

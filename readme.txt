@@ -9,7 +9,7 @@ Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
-Free cookie consent with GDPR, CCPA, ePrivacy, Google Consent Mode v2, and IAB TCF v2.3. No cloud required.
+Free cookie consent with GDPR, CCPA, ePrivacy, Google Consent Mode v2, IAB TCF v2.3, and built-in Cookie Policy generator. No cloud required.
 
 == Description ==
 
@@ -24,6 +24,7 @@ No account to create. The plugin requires no cloud service connection. Basic fea
 Most cookie consent plugins follow the same pattern: a free version with crippled features, and a paid tier starting at $10-50/month that unlocks what you actually need (cookie scanning, consent logs, Google Consent Mode, IAB TCF). FAZ Cookie Manager breaks that model:
 
 * **Cookie scanner** -- Scans your site directly from your browser. No external service, no API limits, no waiting.
+* **Cookie Policy generator (NEW in 1.16.0)** -- Build a jurisdiction-aware Cookie Policy page directly from your admin. Pick GDPR / CCPA / LGPD, fill in your company details, and publish via the `[faz_cookie_policy_complete]` shortcode. Output is multilingual (en, it, fr, de, es, pt-BR), pulls the live cookie inventory from the scanner, and ships with a non-removable disclaimer that the templates are starting points, not legal advice. The standalone `[faz_cookie_table]` shortcode (and the matching Gutenberg block) still works for embedding just the cookie list.
 * **Consent logging with CSV export** -- Every consent is recorded locally in your database. Export anytime for audits.
 * **Google Consent Mode v2** -- Sends all 7 consent signals to Google tags. No premium required.
 * **IAB TCF v2.3** -- Full Transparency and Consent Framework support, built in.
@@ -59,6 +60,19 @@ This plugin assists consent and privacy workflows. It does not itself create, pr
 5. Monitor consent analytics on the dashboard
 
 Core banner functionality runs on your WordPress site. Optional update/download features may contact GitHub, IAB Europe, MaxMind, ip-api.com, ipinfo.io (opt-in VPN detection), or the AMP CDN depending on which features you enable and use.
+
+= Cookie Policy generator (1.16.0+) =
+
+Need a Cookie Policy page that explains the cookies your site sets, the jurisdiction it operates under, and who the visitor should contact about their data? FAZ Cookie Manager 1.16.0 ships a dedicated **Cookie Policy** admin tab plus the `[faz_cookie_policy_complete]` shortcode.
+
+* **Jurisdiction-aware** -- pick GDPR (EU/EEA/UK), CCPA/CPRA (California), or LGPD (Brazil). Each jurisdiction ships its own template scaffold with the legal references and required sections for that framework.
+* **Multilingual (6 languages out of the box)** -- en, it, fr, de, es, pt-BR. Override per render with `[faz_cookie_policy_complete lang="it"]` or let the visitor's browser language pick.
+* **Auto-populated cookie inventory** -- the rendered policy pulls live from `wp_faz_cookies`, so any cookie discovered by the scanner shows up at the next render with its category, duration and description, in the active language.
+* **Filled with your company data** -- name, address, DPO email, third-party services, retention period: stored in `faz_cookie_policy_data` option, edited via the admin form, never seeded from `admin_email` or `blogname` (PII protection).
+* **Non-removable legal disclaimer** -- every generated policy ends with a footer making explicit that the templates are starting points, not legal advice. The disclaimer is hardcoded in the renderer (not in the template files) so section overrides cannot suppress it.
+* **Versioning hash** -- a `data-faz-policy-version` attribute on the rendered article tracks template + data drift over time. Display-only fields (the visible "Last updated" date) are excluded so the hash doesn't change daily.
+* **Filter for site builders** -- `faz_cookie_policy_data` lets you inject custom placeholders before template substitution.
+* **Backwards compatible** -- the long-standing `[faz_cookie_policy]` shortcode (with `site_name` / `contact` / `show_table` attributes from 1.7.0) is unchanged. The standalone `[faz_cookie_table]` shortcode and matching `faz/cookie-table` Gutenberg block still work for embedding just the cookie inventory table.
 
 = Multi-banner geo-routing vs multilingual content (1.14.0+) =
 
