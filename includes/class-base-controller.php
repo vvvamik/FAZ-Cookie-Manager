@@ -85,7 +85,13 @@ abstract class Base_Controller {
 
 		// Flush the underlying object-cache group when supported so legacy keys
 		// are removed too; prefix invalidation above already handles active keys.
+		// Both wp_cache_supports() and wp_cache_flush_group() ship with WP 6.1+;
+		// the function_exists() gates keep us safe on the declared 5.0 minimum.
+		// Plugin Check flags these by NAME without seeing the runtime gate, so
+		// we silence its WP-version probe explicitly here.
+		// phpcs:ignore PluginCheck.CodeAnalysis.RequiredWPFunctionVersion.NewerVersion
 		if ( function_exists( 'wp_cache_flush_group' ) && function_exists( 'wp_cache_supports' ) && wp_cache_supports( 'flush_group' ) ) {
+			// phpcs:ignore PluginCheck.CodeAnalysis.RequiredWPFunctionVersion.NewerVersion
 			wp_cache_flush_group( $this->cache_group );
 		} else {
 			// Fallback: delete known legacy cache keys when flush_group unavailable.
