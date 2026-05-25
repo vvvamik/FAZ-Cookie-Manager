@@ -172,6 +172,19 @@ class Cookie_Policy_Api {
 	/**
 	 * Hard-coded defaults so the form never renders empty fields.
 	 *
+	 * Note: company.name / company.email return EMPTY strings deliberately
+	 * — they used to be seeded with get_option('blogname') / get_option(
+	 * 'admin_email'), but that meant the first Save round-trip persisted
+	 * `admin_email` into faz_cookie_policy_data and the public-facing
+	 * `[faz_cookie_policy_complete]` shortcode then published the WP admin
+	 * email as the controller contact, even when the operator never
+	 * explicitly entered it. The admin email in particular is PII (often a
+	 * real person's inbox) and must not be published as a public contact
+	 * until the operator types it into the form. UX prefill (showing the
+	 * admin a sensible suggestion) should happen JS-side via placeholders,
+	 * never via persisted defaults. Matches the parallel fix already
+	 * applied to `Renderer::baseline_defaults()`.
+	 *
 	 * @return array
 	 */
 	private function default_settings() {
@@ -179,9 +192,9 @@ class Cookie_Policy_Api {
 			'jurisdiction'         => 'gdpr-strict',
 			'default_lang'         => '',
 			'company'              => array(
-				'name'     => (string) get_option( 'blogname', '' ),
+				'name'     => '',
 				'address'  => '',
-				'email'    => (string) get_option( 'admin_email', '' ),
+				'email'    => '',
 				'registry' => '',
 			),
 			'dpo'                  => array(

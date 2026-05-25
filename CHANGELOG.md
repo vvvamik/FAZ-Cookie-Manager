@@ -2,11 +2,23 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
-## [Unreleased] — WordPress 7.0 compatibility verification
+## [1.16.0] — 2026-05-20
+
+### Added
+
+- **Cookie Policy Generator** (Spec 002). New admin tab under `FAZ Cookie Manager → Cookie Policy` and `[faz_cookie_policy_complete]` shortcode that renders a jurisdiction-aware, multi-language Cookie Policy from a template scaffold filled with the admin's own data (company details, DPO, third-party services, retention). Covers three jurisdictions (GDPR EU/EEA/UK, CCPA/CPRA California, LGPD Brazil) and six languages (en, it, fr, de, es, pt-BR) — 18 scaffolds total. The auto-populated cookie list pulls from `wp_faz_cookies` so additions via the scanner are reflected at the next render. A non-removable disclaimer at the bottom of every generated policy makes explicit that the templates are starting points, not legal advice. The long-standing `[faz_cookie_policy]` shortcode (with `site_name` / `contact` / `show_table` attributes) is **unchanged** and still supported for backward compatibility — the new `_complete` variant is opt-in.
+- New REST API under `faz/v1/cookie-policy/*` (`/settings` GET/POST, `/preview` POST) — `manage_options` + nonce. Preview endpoint renders without persisting (US-05).
+- Versioning hash emitted as `<meta name="faz-policy-version">` so a future re-prompt mechanism can detect template-or-data drift (Spec FR-07, Constitution VI). Display-only fields (`LAST_UPDATED_DATE`) are excluded from the hash input so the version doesn't drift on the calendar.
+- `faz_cookie_policy_data` filter — site builders can inject custom placeholders before template substitution.
+
+### Fixed
+
+- **Frontend focus-trap listener accumulation** (closes issue #124). `_fazAttachFocusLoop` now tracks attached keydown handlers per `(element, direction)` slot in a module-scope WeakMap and removes the previous listener before attaching a new one. Previously repeated `_fazLoopFocus()` calls (legitimate dynamic re-init AND the focus-trap E2E fixture) stacked listeners; the most-recently-registered handler closed over potentially-stale `targetElement` references, producing the focus-not-moving symptom under full-suite load.
+- **Plugin Check `wp_function_not_compatible_with_requires_wp`** errors on `wp_cache_supports()` / `wp_cache_flush_group()` calls in `includes/class-base-controller.php::delete_cache()`. Replaced the WP 6.1+ fast-path entirely with the manual `wp_cache_delete` loop that previously existed as a fallback. Plugin Check is a static source-text check that ignores `function_exists()` runtime gates, so the fix is removal not gating. The real invalidation work is the `Cache::delete()` epoch bump immediately above; the manual loop is just hygiene for cold leftover keys.
 
 ### Compatibility
 
-- **WordPress 7.0** — Verified against the May 20, 2026 final release. No code changes were required:
+- **WordPress 7.0** (May 20, 2026 final) — verified compatible with no code changes:
   - Plugin does not declare `add_theme_support('html5', …)` (the deprecation only affects themes).
   - Plugin does not use `the_author_meta`, `get_the_author_link`, `the_author_link`, `posts_link`, or `wp_list_authors` — unaffected by the title-attribute default change.
   - All three Gutenberg blocks (`faz/cookie-table`, `faz/cookie-policy`, `faz/consent-button`) already declare `'api_version' => 3`, satisfying the new iframed-editor enforcement.
@@ -14,20 +26,12 @@ All notable changes to FAZ Cookie Manager are documented in this file.
   - PHP requirement is already 7.4 (matches WP 7.0's new floor) — no version bump needed.
   - Plugin does not use the Interactivity API (`@wordpress/interactivity`, `wp_interactivity_*`); the new `watch()` / server-side `state.url` behavior changes do not apply.
   - Plugin Check (wp.org category) against the v1.16.0 wp.org-shape ZIP on WP 7.0: **0 errors**, 277 pre-existing stylistic warnings (`PrefixAllGlobals` notices on hook/variable/function names and `DirectDatabaseQuery` notices on this plugin's own custom tables — all by design).
-  - E2E suite on WP 7.0: 482 tests pass under the same conditions that previously produced equivalent results on WP 6.x. The 26 deltas observed during a 14-minute serial run are all reproducible-as-pass when re-run in isolation — root cause is test-suite login-session pollution and WP-CLI timeout under continuous load, not plugin behavior on WP 7.0.
-
-## [1.16.0] — 2026-05-20
-
-### Added
-
-- **Cookie Policy Generator** (Spec 002). New admin tab under `FAZ Cookie Manager → Cookie Policy` and `[faz_cookie_policy_complete]` shortcode that renders a jurisdiction-aware, multi-language Cookie Policy from a template scaffold filled with the admin's own data (company details, DPO, third-party services, retention). Covers three jurisdictions (GDPR EU/EEA/UK, CCPA/CPRA California, LGPD Brazil) and six languages (en, it, fr, de, es, pt-BR) — 18 scaffolds total. The auto-populated cookie list pulls from `wp_faz_cookies` so additions via the scanner are reflected at the next render. A non-removable disclaimer at the bottom of every generated policy makes explicit that the templates are starting points, not legal advice. The long-standing `[faz_cookie_policy]` shortcode (with `site_name` / `contact` / `show_table` attributes) is **unchanged** and still supported for backward compatibility — the new `_complete` variant is opt-in. The suffix is human-readable (was `_v2` in pre-release; renamed before 1.16.0 shipping for a clearer migration path: `[faz_cookie_policy]` keeps the canned legacy output, `[faz_cookie_policy_complete]` upgrades to the generator).
-- New REST API under `faz/v1/cookie-policy/*` (`/settings` GET/POST, `/preview` POST) — `manage_options` + nonce. Preview endpoint renders without persisting (US-05).
-- Versioning hash emitted as `<meta name="faz-policy-version">` so a future re-prompt mechanism can detect template-or-data drift (Spec FR-07, Constitution VI).
-- `faz_cookie_policy_data` filter — site builders can inject custom placeholders before template substitution.
+  - E2E suite on WP 7.0: 638 tests pass under the same conditions that previously produced equivalent results on WP 6.x. Sporadic per-spec flakes are reproducible-as-pass when re-run in isolation — root cause is test-suite login-session pollution and WP-CLI timeout under continuous load, not plugin behavior on WP 7.0.
 
 ### Notes
 
 Builds on top of the geo-routing v2 work from 1.15.0 (no shared code paths). The two features are orthogonal — geo-routing decides WHICH banner to show, the cookie-policy generator renders the policy page content.
+
 ## [1.15.0] — 2026-05-20
 
 ### Added

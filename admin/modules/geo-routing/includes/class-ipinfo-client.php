@@ -128,7 +128,13 @@ class Ipinfo_Client {
 	 * @return array{vpn: bool|null, source: string}
 	 */
 	private function http_lookup( $ip, $api_key ) {
-		$url = sprintf( 'https://ipinfo.io/%s/privacy?token=%s', rawurlencode( $ip ), rawurlencode( $api_key ) );
+		// Token MUST travel in the Authorization header, NOT as a `?token=...`
+		// query parameter. With `?token=` the API key lands in every request
+		// log that records URLs — WP_DEBUG_LOG, Query Monitor, reverse-proxy
+		// access logs, APM tools — and a single leaked log file exposes the
+		// operator's ipinfo.io credentials. ipinfo.io officially supports
+		// `Authorization: Bearer <token>` (see https://ipinfo.io/developers).
+		$url = sprintf( 'https://ipinfo.io/%s/privacy', rawurlencode( $ip ) );
 
 		$response = wp_remote_get(
 			$url,
@@ -136,7 +142,10 @@ class Ipinfo_Client {
 				'timeout'     => self::REQUEST_TIMEOUT,
 				'redirection' => 0,
 				'user-agent'  => 'FAZ-Cookie-Manager/' . ( defined( 'FAZ_VERSION' ) ? FAZ_VERSION : '0.0.0' ) . ' (+https://wordpress.org/plugins/faz-cookie-manager)',
-				'headers'     => array( 'Accept' => 'application/json' ),
+				'headers'     => array(
+					'Accept'        => 'application/json',
+					'Authorization' => 'Bearer ' . $api_key,
+				),
 			)
 		);
 

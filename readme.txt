@@ -58,7 +58,7 @@ This plugin assists consent and privacy workflows. It does not itself create, pr
 4. Enable Google Consent Mode or IAB TCF if you use advertising tools
 5. Monitor consent analytics on the dashboard
 
-Core banner functionality runs on your WordPress site. Optional update/download features may contact GitHub, IAB Europe, MaxMind, or the AMP CDN depending on which features you enable and use.
+Core banner functionality runs on your WordPress site. Optional update/download features may contact GitHub, IAB Europe, MaxMind, ip-api.com, ipinfo.io (opt-in VPN detection), or the AMP CDN depending on which features you enable and use.
 
 = Multi-banner geo-routing vs multilingual content (1.14.0+) =
 
@@ -180,7 +180,7 @@ The plugin source includes several third-party domain names (e.g. `js.stripe.com
 1. **Script-blocking detection patterns** — used to identify analytics, advertising, and tracking scripts that the *site administrator's other plugins* may inject, so we can block them until the visitor has given consent. The plugin itself does **not** load any of these scripts.
 2. **Whitelist defaults** — domains such as `unpkg.com/`, `cdn.jsdelivr.net/`, `fonts.googleapis.com/`, `www.google.com/recaptcha/api`, etc. are seeded as default *whitelist* entries so the script blocker leaves them alone unless the admin explicitly removes them. They are configuration data, not outbound HTTP calls.
 
-The only outbound HTTP requests this plugin makes are the five documented above (Open Cookie Database, IAB GVL, MaxMind, ip-api.com fallback, AMP CDN). All five are gated behind explicit administrator action or an enabled feature. The internal `/faz/v1/banner` endpoint described above is hosted by this plugin on the same site — no third-party network call leaves the visitor's browser to a remote service.
+The only outbound HTTP requests this plugin makes are the six documented above (Open Cookie Database, IAB GVL, MaxMind, ip-api.com fallback, ipinfo.io VPN detection (opt-in), AMP CDN). All six are gated behind explicit administrator action or an enabled feature. The internal `/faz/v1/banner` endpoint described above is hosted by this plugin on the same site — no third-party network call leaves the visitor's browser to a remote service.
 
 == Cache Plugin Compatibility ==
 
@@ -310,6 +310,16 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.16.0 =
+* Feature: Cookie Policy Generator (Spec 002). New admin tab "Cookie Policy" + new `[faz_cookie_policy_complete]` shortcode renders a jurisdiction-aware, multi-language Cookie Policy from a template scaffold filled with the admin's company data. Covers GDPR (EU/EEA/UK), CCPA/CPRA (California), LGPD (Brazil) in six languages (en, it, fr, de, es, pt-BR) — 18 scaffolds total. Auto-populated cookie inventory pulled live from `wp_faz_cookies` so additions via the scanner reflect at the next render. Non-removable disclaimer at the bottom of every generated policy makes explicit that templates are starting points, not legal advice.
+* Feature: REST API `faz/v1/cookie-policy/*` (`/settings` GET/POST, `/preview` POST) — `manage_options` + nonce. Preview renders without persisting so admins can iterate inside a sandboxed-iframe modal.
+* Feature: Policy version hash emitted as `<meta name="faz-policy-version">` for future material-change re-prompt detection (display-only fields excluded from the hash so the version doesn't drift daily).
+* Filter: `faz_cookie_policy_data` lets site builders inject custom placeholders before template substitution.
+* Compatibility: long-standing `[faz_cookie_policy]` shortcode (with `site_name` / `contact` / `show_table` attributes) and the standalone `[faz_cookie_table]` shortcode both unchanged and supported. The new generator is opt-in via the `_complete` suffix.
+* Fix: Frontend focus-trap listener accumulation (issue #124). Reopening the preference center repeatedly no longer stacks keydown handlers; `_fazAttachFocusLoop` now tracks attached handlers per `(element, direction)` slot in a module-scope WeakMap and replaces previous listeners before attaching new ones.
+* Fix: Plugin Check compatibility — removed `wp_cache_flush_group()` / `wp_cache_supports()` fast-path on cache invalidation (both require WP 6.1+, plugin minimum stays at WP 5.0). Manual `wp_cache_delete` loop replaces it; cache epoch bump on the line above is what actually invalidates live reads.
+* Compatibility: verified against WordPress 7.0 (May 2026 final). No code changes required: plugin does not use `the_author_meta`/`get_the_author_link`, all three Gutenberg blocks already declare `api_version: 3`, plugin does not bundle CodeMirror nor use the Interactivity API. `Tested up to` bumped to 7.0.
 
 = 1.15.0 =
 * Feature: Geo-routing v2 — jurisdictional rule-sets. 47 ruleset JSON files cover EU (gdpr-strict + 7 country-specific), UK (uk-gdpr-pecr), 19 US states with privacy law (CCPA + CPA + CTDPA + VCDPA + UCPA + ICDPA + TIPA + MCDPA + TDPSA + OCPA + FDBR + Delaware + NJDPL + NHPL + KCDPA + MODPA + MCDPA + RIDTPPA + ICDPA), 18 international (LGPD/PIPL/APPI/PIPA/POPIA/PDPA-Singapore/Thailand/Vietnam/India/Malaysia/AU/NZ/UAE/KSA/Israel/Turkey/Canada/Quebec Law 25), plus most-protective fallback for unknown / VPN visitors.
