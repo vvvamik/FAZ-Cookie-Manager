@@ -12,7 +12,7 @@ El responsable del tratamiento de los datos personales recogidos mediante cookie
 - **Dirección:** {{COMPANY_ADDRESS}}
 - **Correo electrónico:** {{COMPANY_EMAIL}}
 - **Registro / IVA:** {{COMPANY_REGISTRY}}
-- **Delegado de Protección de Datos (DPO):** {{DPO_NAME}} — {{DPO_EMAIL}}
+- **Delegado de Protección de Datos:** {{DPO_NAME}} — {{DPO_EMAIL}}
 
 ## Qué son las cookies
 
@@ -58,12 +58,6 @@ Conforme a los Arts. 12-22 RGPD usted tiene derecho a:
 - presentar reclamación ante la Agencia Española de Protección de Datos (AEPD)
 
 Para ejercer estos derechos contáctenos en **{{COMPANY_EMAIL}}**. Responderemos en el plazo de un mes (Art. 12(3) RGPD).
-
-## Autoridad de control
-
-Puede contactar con la AEPD o con el Comité Europeo de Protección de Datos: {{EDPB_CONTACT}}.
-
-Véase también: [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}})
 
 ## Modificaciones
 

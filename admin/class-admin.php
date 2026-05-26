@@ -763,6 +763,7 @@ class Admin {
 						'svcLogrocket'             => __( 'LogRocket', 'faz-cookie-manager' ),
 						'svcCrazyegg'              => __( 'Crazy Egg', 'faz-cookie-manager' ),
 						// Advertising
+						'svcGads'                  => __( 'Google Ads', 'faz-cookie-manager' ),
 						'svcMeta'                  => __( 'Meta (Facebook) Pixel', 'faz-cookie-manager' ),
 						'svcTiktok'                => __( 'TikTok Pixel', 'faz-cookie-manager' ),
 						'svcLinkedin'              => __( 'LinkedIn Insight Tag', 'faz-cookie-manager' ),
@@ -774,6 +775,7 @@ class Admin {
 						'svcQuora'                 => __( 'Quora Pixel', 'faz-cookie-manager' ),
 						'svcOutbrain'              => __( 'Outbrain', 'faz-cookie-manager' ),
 						'svcTaboola'               => __( 'Taboola', 'faz-cookie-manager' ),
+						'svcCriteo'                => __( 'Criteo', 'faz-cookie-manager' ),
 						// CDN
 						'svcCf'                    => __( 'Cloudflare', 'faz-cookie-manager' ),
 						'svcFastly'                => __( 'Fastly', 'faz-cookie-manager' ),

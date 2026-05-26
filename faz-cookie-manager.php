@@ -16,10 +16,10 @@
  * Plugin Name:       FAZ Cookie Manager
  * Plugin URI:        https://github.com/fabiodalez-dev/faz-cookie-manager
  * Description:       A comprehensive GDPR/CCPA cookie consent manager with built-in cookie scanner, local consent logging, Google Consent Mode v2, and IAB TCF v2.3 support.
- * Version:           1.16.1
+ * Version:           1.16.2
  * Requires at least: 5.0
  * Tested up to:      7.0
- * Stable tag:        1.16.1
+ * Stable tag:        1.16.2
  * Requires PHP:      7.4
  * Author:            Fabio D'Alessandro
  * Author URI:        https://fabiodalez.it/
@@ -51,7 +51,7 @@ if ( ! defined( 'WPINC' ) ) {
 	die;
 }
 
-define( 'FAZ_VERSION', '1.16.1' );
+define( 'FAZ_VERSION', '1.16.2' );
 define( 'FAZ_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
 define( 'FAZ_PLUGIN_BASEPATH', plugin_dir_path( __FILE__ ) );
 define( 'FAZ_PLUGIN_FILENAME', __FILE__ );
@@ -326,6 +326,16 @@ function faz_set_browser_cookie( $name, $value, $expires, $domain = null ) {
 			'expires'  => (int) $expires,
 			'path'     => '/',
 			'secure'   => is_ssl(),
+			// httponly=false is REQUIRED by design: the consent cookie
+			// (`fazcookie-consent`) is the source of truth for what
+			// frontend JS may or may not do (load GA, load Meta Pixel,
+			// fire dataLayer events). The frontend MUST read it to gate
+			// downstream tracking and re-write it when the user changes
+			// preferences. Marking it HttpOnly would hide it from the
+			// banner script and break the entire consent UX. The cookie
+			// holds opt-in/opt-out booleans only — no session token, no
+			// auth secret — so the CWE-1004 / CWE-614 threat model
+			// (session theft via JS) does not apply.
 			'httponly' => false,
 			'samesite' => 'Lax',
 		);
@@ -333,7 +343,7 @@ function faz_set_browser_cookie( $name, $value, $expires, $domain = null ) {
 			$options['domain'] = $domain;
 		}
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
-		setcookie( $name, $value, $options );
+		setcookie( $name, $value, $options ); // nosemgrep
 	}
 
 	$_COOKIE[ $name ] = $value;
@@ -363,6 +373,10 @@ function faz_expire_browser_cookie( $name ) {
 				'expires'  => time() - DAY_IN_SECONDS,
 				'path'     => '/',
 				'secure'   => is_ssl(),
+				// Mirror image of faz_set_browser_cookie() above:
+				// httponly MUST stay false so the frontend JS can
+				// observe the cookie's disappearance and re-render the
+				// banner. See the longer rationale on that function.
 				'httponly' => false,
 				'samesite' => 'Lax',
 			);
@@ -370,7 +384,7 @@ function faz_expire_browser_cookie( $name ) {
 				$options['domain'] = $domain;
 			}
 			// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
-			setcookie( $name, '', $options );
+			setcookie( $name, '', $options ); // nosemgrep
 		}
 	}
 

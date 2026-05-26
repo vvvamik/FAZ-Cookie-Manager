@@ -123,6 +123,14 @@ class Renderer {
 		}
 
 		$markdown = Generator::substitute( $scaffold, $data_for_md );
+		// 1.16.2 — drop list lines whose only content is a bold label and a
+		// now-empty placeholder. Templates carry rows like
+		// `- **Register / USt-ID:** {{COMPANY_REGISTRY}}` or
+		// `- **DPO:** {{DPO_NAME}} — {{DPO_EMAIL}}`; when the admin leaves
+		// those fields blank the substitution result is an orphan label with
+		// trailing whitespace/em-dashes/commas, visually broken on the public
+		// policy page. Reported by Gooloo on 1.16.1.
+		$markdown = self::strip_empty_label_lines( $markdown );
 		$html     = Generator::markdown_to_html( $markdown );
 
 		foreach ( $html_tokens as $token_name => $html_value ) {
@@ -140,9 +148,12 @@ class Renderer {
 			$html = str_replace( $sentinel, (string) $html_value, $html );
 		}
 
-		// FR-04: append the non-removable disclaimer. Hardcoded, NOT in the
-		// template file (so admin section-overrides cannot suppress it).
-		$html .= self::disclaimer( $jurisdiction, $lang, $data );
+		// Disclaimer block. Admin-configurable since 1.16.2: visibility
+		// + text are stored in the `disclaimer` sub-array of the
+		// faz_cookie_policy_data option. Default behaviour remains
+		// "show the standard FAZ disclaimer" so existing installs keep
+		// the same rendered output until they edit the field.
+		$html .= self::disclaimer( $jurisdiction, $lang, $data, $settings );
 
 		// FR-07: compute the policy version hash. Exposed in <head> (if
 		// wp_head hasn't fired) AND as a data-faz-policy-version attribute
@@ -338,7 +349,8 @@ class Renderer {
 			"SELECT c.cookie_id, c.name AS cookie_name, c.domain AS cookie_domain,
 			        c.duration AS cookie_duration, c.description AS cookie_description,
 			        c.category AS category_id,
-			        cat.name AS category_name, cat.description AS category_description
+			        cat.name AS category_name, cat.description AS category_description,
+			        cat.slug AS category_slug
 			   FROM `{$cookies_table}` AS c
 			   LEFT JOIN `{$categories_table}` AS cat ON c.category = cat.category_id
 			   ORDER BY cat.priority ASC, c.name ASC",
@@ -348,6 +360,34 @@ class Renderer {
 		if ( empty( $rows ) ) {
 			$html = '';
 		} else {
+			// 1.16.2 — exclude WordPress-internal infrastructure cookies
+			// (wp-settings-*, wordpress_logged_in_*, wordpress_test_cookie,
+			// comment_author_*, etc.) AND the "wordpress-internal" admin
+			// category as a whole. These are strictly-necessary admin-only
+			// cookies that visitors never receive — listing them in the
+			// public Cookie Policy is misleading and bloats the page.
+			// Mirrors the same filter applied to the frontend banner
+			// (Frontend::is_wp_internal_cookie + 'wordpress-internal'
+			// category skip in prepare_frontend_categories).
+			$rows = array_values( array_filter( $rows, function ( $row ) {
+				// Skip the dedicated "wordpress-internal" admin category
+				// entirely — by convention it groups admin-only cookies
+				// that visitors never receive.
+				if ( 'wordpress-internal' === (string) ( $row['category_slug'] ?? '' ) ) {
+					return false;
+				}
+				$name = (string) ( $row['cookie_name'] ?? '' );
+				if ( class_exists( '\\FazCookie\\Frontend\\Frontend' )
+					&& \FazCookie\Frontend\Frontend::is_wp_internal_cookie( $name ) ) {
+					return false;
+				}
+				return true;
+			} ) );
+			if ( empty( $rows ) ) {
+				wp_cache_set( $cache_key, '', 'faz_cookie_policy', 5 * MINUTE_IN_SECONDS );
+				self::$cookie_list_cache[ $cache_key ] = '';
+				return '';
+			}
 			$grouped = array();
 			foreach ( $rows as $row ) {
 				// Categories' `name` and `description` columns store i18n
@@ -364,10 +404,44 @@ class Renderer {
 				$grouped[ $cat ][] = $row;
 			}
 
+			// Localised table-column headings. Translators handled via
+			// gettext; default English used when locale strings are
+			// unavailable (Cookie Policy renderer may be called outside
+			// admin pages where __() context isn't always loaded).
+			$col_cookie   = esc_html__( 'Cookie', 'faz-cookie-manager' );
+			$col_domain   = esc_html__( 'Domain', 'faz-cookie-manager' );
+			$col_duration = esc_html__( 'Duration', 'faz-cookie-manager' );
+			$col_desc     = esc_html__( 'Description', 'faz-cookie-manager' );
+			$cookies_lbl  = esc_html__( 'cookies', 'faz-cookie-manager' );
+
 			$parts = array();
 			foreach ( $grouped as $cat_name => $items ) {
-				$parts[] = '<section class="faz-cookie-policy-category">';
-				$parts[] = '<h3>' . esc_html( $cat_name ) . '</h3>';
+				$cookie_count = count( $items );
+				$parts[]      = '<section class="faz-cookie-policy-category">';
+				// HTML5 <details> gives a native, JS-free accordion. The
+				// <summary> doubles as the category heading; we keep an
+				// inner <h3> for outline/accessibility tools that walk
+				// heading levels. Setting `open` on the first category
+				// only would require state we don't have here, so leave
+				// all collapsed by default — visitors expand the ones
+				// they care about. Reported by Gooloo on 1.16.x: the
+				// previous flat <dl> layout (1.16.0/1.16.1) produced a
+				// 700+ line wall of definition-list pairs that buried
+				// the policy text below it.
+				$parts[] = '<details class="faz-cookie-policy-details">';
+				$parts[] = '<summary class="faz-cookie-policy-summary">';
+				// Use <span role="heading" aria-level="3"> instead of an
+				// actual <h3> so the category name does NOT trigger the
+				// block-level layout reset that every WordPress block
+				// theme (twentytwentyfive, twentytwentyfour) applies to
+				// headings inside .entry-content. Inline span keeps the
+				// chevron + name + count on one line; the role/aria-level
+				// pair restores the heading semantics for screen readers
+				// and document-outline tools.
+				$parts[] = '<span class="faz-cookie-policy-category-name" role="heading" aria-level="3">' . esc_html( $cat_name ) . '</span>';
+				$parts[] = '<span class="faz-cookie-policy-count">' . esc_html( (string) $cookie_count ) . ' ' . $cookies_lbl . '</span>';
+				$parts[] = '</summary>';
+				$parts[] = '<div class="faz-cookie-policy-details-body">';
 				$cat_desc = self::decode_i18n_text( $items[0]['category_description'] ?? '', $lang );
 				if ( '' !== $cat_desc ) {
 					// Category description may contain HTML (admin sometimes
@@ -376,7 +450,14 @@ class Renderer {
 					// here too so well-formed HTML survives without escaping.
 					$parts[] = wp_kses_post( $cat_desc );
 				}
-				$parts[] = '<dl>';
+				$parts[] = '<table class="faz-cookie-policy-table">';
+				$parts[] = '<thead><tr>'
+					. '<th scope="col">' . $col_cookie . '</th>'
+					. '<th scope="col">' . $col_domain . '</th>'
+					. '<th scope="col">' . $col_duration . '</th>'
+					. '<th scope="col">' . $col_desc . '</th>'
+					. '</tr></thead>';
+				$parts[] = '<tbody>';
 				foreach ( $items as $row ) {
 					// Cookie `name` and `domain` are plain identifiers (not
 					// translated). Cookie `duration` and `description` ARE
@@ -385,20 +466,18 @@ class Renderer {
 					$domain   = (string) ( $row['cookie_domain'] ?? '' );
 					$duration = self::decode_i18n_text( $row['cookie_duration'] ?? '', $lang );
 					$desc     = self::decode_i18n_text( $row['cookie_description'] ?? '', $lang );
-					$parts[]  = '<dt><code>' . esc_html( $name ) . '</code>';
-					if ( '' !== $domain ) {
-						$parts[] = ' <small>(' . esc_html( $domain ) . ')</small>';
-					}
-					$parts[] = '</dt>';
-					$parts[] = '<dd>';
-					if ( '' !== $duration ) {
-						$parts[] = '<strong>' . esc_html__( 'Duration:', 'faz-cookie-manager' ) . '</strong> ' . esc_html( $duration ) . ' &middot; ';
-					}
+					$parts[]  = '<tr>';
+					$parts[]  = '<td data-label="' . $col_cookie . '"><code>' . esc_html( $name ) . '</code></td>';
+					$parts[]  = '<td data-label="' . $col_domain . '">' . ( '' !== $domain ? esc_html( $domain ) : '&mdash;' ) . '</td>';
+					$parts[]  = '<td data-label="' . $col_duration . '">' . ( '' !== $duration ? esc_html( $duration ) : '&mdash;' ) . '</td>';
 					// Cookie description may contain HTML inside the JSON value.
-					$parts[] = wp_kses_post( $desc );
-					$parts[] = '</dd>';
+					$parts[]  = '<td data-label="' . $col_desc . '">' . wp_kses_post( $desc ) . '</td>';
+					$parts[]  = '</tr>';
 				}
-				$parts[] = '</dl>';
+				$parts[] = '</tbody>';
+				$parts[] = '</table>';
+				$parts[] = '</div>';
+				$parts[] = '</details>';
 				$parts[] = '</section>';
 			}
 			$html = implode( "\n", $parts );
@@ -447,6 +526,48 @@ class Renderer {
 	}
 
 	/**
+	 * Drop list-item lines whose only content is a bold label and an
+	 * empty/whitespace tail. Applies after placeholder substitution so a
+	 * blank admin field doesn't leave behind "**Label:** — " in the
+	 * rendered policy.
+	 *
+	 * Matched shapes (case-insensitive, multiline):
+	 *   `- **Anything:**`            → drop
+	 *   `- **Anything:**  `          → drop
+	 *   `- **Anything:** —  `        → drop
+	 *   `- **Anything:**  —  `       → drop
+	 *   `- **Anything:**  -  `       → drop (ASCII dash variants)
+	 *   `* **Anything:** , ,`        → drop (also stray separators)
+	 *
+	 * NOT matched (kept):
+	 *   `- **Address:** Via Roma 10`        → real content present
+	 *   `- **Phone:** +39 02 1234`          → digits/text present
+	 *   `- **Title** (without colon)`       → not the "label: value" shape
+	 *
+	 * @param string $markdown
+	 * @return string
+	 */
+	private static function strip_empty_label_lines( $markdown ) {
+		if ( ! is_string( $markdown ) || '' === $markdown ) {
+			return (string) $markdown;
+		}
+		// `[\s\-—–·,]*` allows a mixture of whitespace, ASCII hyphen,
+		// en-dash, em-dash, middle dot and comma in the trailing run.
+		// `m` flag = ^/$ match per line.
+		$pattern = '/^[ \t]*[-*][ \t]+\*\*[^*\n]+:\*\*[\s\-—–·,]*\r?$/mu';
+		$cleaned = preg_replace( $pattern, '', $markdown );
+		if ( null === $cleaned ) {
+			// Regex error (e.g. PCRE compile fail under exotic PHP build).
+			// Fall back to the un-cleaned source rather than nuking the policy.
+			return $markdown;
+		}
+		// Collapse the 2+ blank lines the deletion may have left behind so
+		// the markdown parser doesn't render extra paragraph spacing.
+		$cleaned = (string) preg_replace( "/(\r?\n){3,}/", "\n\n", $cleaned );
+		return $cleaned;
+	}
+
+	/**
 	 * Build a comma-separated services list from settings.
 	 *
 	 * @param array $settings
@@ -481,6 +602,7 @@ class Renderer {
 			'logrocket'     => 'LogRocket',
 			'crazyegg'      => 'Crazy Egg',
 			// Advertising pixels
+			'gads'          => 'Google Ads',
 			'meta'          => 'Meta (Facebook) Pixel',
 			'tiktok'        => 'TikTok Pixel',
 			'linkedin'      => 'LinkedIn Insight Tag',
@@ -492,6 +614,7 @@ class Renderer {
 			'quora'         => 'Quora Pixel',
 			'outbrain'      => 'Outbrain',
 			'taboola'       => 'Taboola',
+			'criteo'        => 'Criteo',
 			// CDN / edge / performance
 			'cf'            => 'Cloudflare',
 			'fastly'        => 'Fastly',
@@ -573,29 +696,51 @@ class Renderer {
 	}
 
 	/**
-	 * The hardcoded non-removable disclaimer (FR-04). One per language.
+	 * Disclaimer block. Admin-configurable since 1.16.2:
+	 *   - `disclaimer.show` (bool, default true): hide the block entirely.
+	 *   - `disclaimer.text` (string, default ''): when non-empty, replaces
+	 *     the standard FAZ disclaimer with custom markup (filtered via
+	 *     wp_kses_post). When empty, the standard localised text is used.
+	 *
+	 * Wrapper changed from <footer> to <div class="faz-cookie-policy-disclaimer">
+	 * in 1.16.2 so the element does not introduce a landmark inside an <article>
+	 * (Gooloo feedback: <footer> is an HTML5 landmark and visually disrupts
+	 * themes that style page <footer> globally).
 	 *
 	 * @param string $jurisdiction
 	 * @param string $lang
-	 * @param array  $data Includes OFFICIAL_RESOURCES_URL.
-	 * @return string HTML <footer> block.
+	 * @param array  $data     Includes OFFICIAL_RESOURCES_URL.
+	 * @param array  $settings Full settings array (reads `disclaimer.*`).
+	 * @return string HTML <div> block, or empty string when hidden.
 	 */
-	private static function disclaimer( $jurisdiction, $lang, array $data ) {
-		$texts = array(
-			'en'    => 'This cookie policy was generated by FAZ Cookie Manager using a template scaffold for the %s jurisdiction. Templates do not constitute legal advice. The administrator of this site remains the data controller under applicable law and is responsible for the accuracy and adequacy of the published content. For jurisdiction-specific guidance, consult: %s.',
-			'it'    => 'Questa cookie policy è stata generata da FAZ Cookie Manager usando uno scaffold modello per la giurisdizione %s. I modelli non costituiscono consulenza legale. L\'amministratore di questo sito resta il titolare del trattamento dei dati ai sensi della legge applicabile ed è responsabile dell\'accuratezza e adeguatezza dei contenuti pubblicati. Per indicazioni specifiche per la giurisdizione, consultare: %s.',
-			'fr'    => 'Cette politique de cookies a été générée par FAZ Cookie Manager à partir d\'un modèle pour la juridiction %s. Les modèles ne constituent pas un conseil juridique. L\'administrateur de ce site reste le responsable du traitement au sens de la loi applicable et est responsable de l\'exactitude et de l\'adéquation du contenu publié. Pour des conseils spécifiques à la juridiction, consultez : %s.',
-			'de'    => 'Diese Cookie-Richtlinie wurde von FAZ Cookie Manager aus einer Vorlage für die Rechtsordnung %s generiert. Vorlagen stellen keine Rechtsberatung dar. Der Administrator dieser Website bleibt für die Datenverarbeitung verantwortlich und für die Richtigkeit und Angemessenheit der veröffentlichten Inhalte verantwortlich. Für rechtsraumspezifische Hinweise siehe: %s.',
-			'es'    => 'Esta política de cookies fue generada por FAZ Cookie Manager a partir de una plantilla para la jurisdicción %s. Las plantillas no constituyen asesoramiento legal. El administrador de este sitio sigue siendo el responsable del tratamiento de datos según la ley aplicable y es responsable de la exactitud y adecuación del contenido publicado. Para orientación específica de la jurisdicción, consulte: %s.',
-			'pt-BR' => 'Esta política de cookies foi gerada pelo FAZ Cookie Manager a partir de um modelo para a jurisdição %s. Os modelos não constituem aconselhamento jurídico. O administrador deste site permanece como controlador dos dados conforme a lei aplicável e é responsável pela exatidão e adequação do conteúdo publicado. Para orientação específica da jurisdição, consulte: %s.',
-		);
-		$tpl = $texts[ $lang ] ?? $texts['en'];
-		$jurisdiction_label = self::jurisdiction_display_name( $jurisdiction, $lang );
-		$url = (string) ( $data['OFFICIAL_RESOURCES_URL'] ?? '' );
-		$url_html = $url ? '<a href="' . esc_url( $url ) . '" rel="noopener" target="_blank">' . esc_html( $url ) . '</a>' : '—';
-		// sprintf with escaped jurisdiction + url_html (the url is already esc_url'd).
-		$body = sprintf( $tpl, '<strong>' . esc_html( $jurisdiction_label ) . '</strong>', $url_html );
-		return "\n" . '<footer class="faz-cookie-policy-disclaimer">' . $body . '</footer>';
+	private static function disclaimer( $jurisdiction, $lang, array $data, array $settings = array() ) {
+		$disc = is_array( $settings['disclaimer'] ?? null ) ? $settings['disclaimer'] : array();
+		$show = array_key_exists( 'show', $disc ) ? (bool) $disc['show'] : true;
+		if ( ! $show ) {
+			return '';
+		}
+		$custom = isset( $disc['text'] ) && is_string( $disc['text'] ) ? trim( $disc['text'] ) : '';
+		if ( '' !== $custom ) {
+			// Admin-provided text. Allow inline HTML (links, em, strong) but
+			// run through wp_kses_post for safety since the outer render()
+			// pass skips kses for $html_value tokens here.
+			$body = wp_kses_post( $custom );
+		} else {
+			$texts = array(
+				'en'    => 'This cookie policy was generated by FAZ Cookie Manager using a template scaffold for the %s jurisdiction. Templates do not constitute legal advice. The administrator of this site remains the data controller under applicable law and is responsible for the accuracy and adequacy of the published content. For jurisdiction-specific guidance, consult: %s.',
+				'it'    => 'Questa cookie policy è stata generata da FAZ Cookie Manager usando uno scaffold modello per la giurisdizione %s. I modelli non costituiscono consulenza legale. L\'amministratore di questo sito resta il titolare del trattamento dei dati ai sensi della legge applicabile ed è responsabile dell\'accuratezza e adeguatezza dei contenuti pubblicati. Per indicazioni specifiche per la giurisdizione, consultare: %s.',
+				'fr'    => 'Cette politique de cookies a été générée par FAZ Cookie Manager à partir d\'un modèle pour la juridiction %s. Les modèles ne constituent pas un conseil juridique. L\'administrateur de ce site reste le responsable du traitement au sens de la loi applicable et est responsable de l\'exactitude et de l\'adéquation du contenu publié. Pour des conseils spécifiques à la juridiction, consultez : %s.',
+				'de'    => 'Diese Cookie-Richtlinie wurde von FAZ Cookie Manager aus einer Vorlage für die Rechtsordnung %s generiert. Vorlagen stellen keine Rechtsberatung dar. Der Administrator dieser Website bleibt für die Datenverarbeitung verantwortlich und für die Richtigkeit und Angemessenheit der veröffentlichten Inhalte verantwortlich. Für rechtsraumspezifische Hinweise siehe: %s.',
+				'es'    => 'Esta política de cookies fue generada por FAZ Cookie Manager a partir de una plantilla para la jurisdicción %s. Las plantillas no constituyen asesoramiento legal. El administrador de este sitio sigue siendo el responsable del tratamiento de datos según la ley aplicable y es responsable de la exactitud y adecuación del contenido publicado. Para orientación específica de la jurisdicción, consulte: %s.',
+				'pt-BR' => 'Esta política de cookies foi gerada pelo FAZ Cookie Manager a partir de um modelo para a jurisdição %s. Os modelos não constituem aconselhamento jurídico. O administrador deste site permanece como controlador dos dados conforme a lei aplicável e é responsável pela exatidão e adequação do conteúdo publicado. Para orientação específica da jurisdição, consulte: %s.',
+			);
+			$tpl = $texts[ $lang ] ?? $texts['en'];
+			$jurisdiction_label = self::jurisdiction_display_name( $jurisdiction, $lang );
+			$url = (string) ( $data['OFFICIAL_RESOURCES_URL'] ?? '' );
+			$url_html = $url ? '<a href="' . esc_url( $url ) . '" rel="noopener" target="_blank">' . esc_html( $url ) . '</a>' : '—';
+			$body = sprintf( $tpl, '<strong>' . esc_html( $jurisdiction_label ) . '</strong>', $url_html );
+		}
+		return "\n" . '<div class="faz-cookie-policy-disclaimer">' . $body . '</div>';
 	}
 
 	/**
@@ -767,7 +912,13 @@ class Renderer {
 		// not the hostname). We pull the host from home_url() — that
 		// reads `siteurl` from wp_options, which is admin-controlled
 		// and not derived from the request — and combine it with the
-		// sanitised REQUEST_URI path.
+		// sanitised REQUEST_URI path. We also STRIP the query string
+		// and fragment: rendering the policy from inside the WP
+		// preview flow (?preview_id=…&preview_nonce=…) would otherwise
+		// leak the preview nonce into the public policy text, as
+		// reported by Gooloo. The canonical policy URL is its path
+		// only — neither query state nor anchor belong in the
+		// {{COOKIE_POLICY_URL}} placeholder.
 		if ( ! isset( $_SERVER['REQUEST_URI'] ) ) {
 			return home_url( '/' );
 		}
@@ -776,8 +927,13 @@ class Renderer {
 		// Normalise leading slash and drop any control chars / CR-LF
 		// the request might have smuggled.
 		$request_uri = preg_replace( '/[\x00-\x1F\x7F]/', '', (string) $request_uri );
-		$request_uri = '/' . ltrim( (string) $request_uri, '/' );
-		return home_url( $request_uri );
+		// Strip query string and fragment — keep only the path.
+		$path = wp_parse_url( $request_uri, PHP_URL_PATH );
+		if ( ! is_string( $path ) || '' === $path ) {
+			return home_url( '/' );
+		}
+		$path = '/' . ltrim( $path, '/' );
+		return home_url( $path );
 	}
 
 	private static function table_exists( $table ) {

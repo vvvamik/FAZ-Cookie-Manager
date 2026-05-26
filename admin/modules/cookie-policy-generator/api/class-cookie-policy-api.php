@@ -247,6 +247,13 @@ class Cookie_Policy_Api {
 			'privacy_policy_url'   => '',
 			'language_priority'    => array( 'en', 'it', 'fr', 'de', 'es', 'pt-BR' ),
 			'section_overrides'    => array(), // section_id → free-form markdown
+			// Admin-editable disclaimer (1.16.2). `show=true` + empty `text`
+			// reproduces the pre-1.16.2 behaviour: standard FAZ disclaimer in
+			// the active language. Set `show=false` to hide entirely.
+			'disclaimer'           => array(
+				'show' => true,
+				'text' => '',
+			),
 		);
 	}
 
@@ -289,7 +296,7 @@ class Cookie_Policy_Api {
 			// Heatmaps / session recording
 			'hotjar', 'clarity', 'mouseflow', 'smartlook', 'luckyorange', 'fullstory', 'logrocket', 'crazyegg',
 			// Advertising pixels
-			'meta', 'tiktok', 'linkedin', 'msuet', 'twitter', 'pinterest', 'reddit', 'snap', 'quora', 'outbrain', 'taboola',
+			'gads', 'meta', 'tiktok', 'linkedin', 'msuet', 'twitter', 'pinterest', 'reddit', 'snap', 'quora', 'outbrain', 'taboola', 'criteo',
 			// CDN / edge / performance
 			'cf', 'fastly', 'akamai', 'cloudfront', 'bunnycdn', 'jsdelivr',
 			// Anti-bot / forms
@@ -335,6 +342,32 @@ class Cookie_Policy_Api {
 			}
 			if ( ! empty( $cleaned ) ) {
 				$out['language_priority'] = $cleaned;
+			}
+		}
+
+		if ( isset( $in['disclaimer'] ) && is_array( $in['disclaimer'] ) ) {
+			$d = $in['disclaimer'];
+			// `show` is the visibility toggle. Default true preserves the
+			// pre-1.16.2 behaviour for installs that submit a payload
+			// without the field. Accept truthy strings ('1','true','on')
+			// because some form serialisations stringify booleans.
+			if ( array_key_exists( 'show', $d ) ) {
+				$raw = $d['show'];
+				if ( is_bool( $raw ) ) {
+					$out['disclaimer']['show'] = $raw;
+				} elseif ( is_string( $raw ) ) {
+					$out['disclaimer']['show'] = in_array( strtolower( $raw ), array( '1', 'true', 'on', 'yes' ), true );
+				} else {
+					$out['disclaimer']['show'] = (bool) $raw;
+				}
+			}
+			// `text`: when non-empty replaces the standard FAZ disclaimer.
+			// 4000 chars is generous enough for a legal-style block but
+			// keeps the payload bounded. wp_kses_post at render time
+			// strips dangerous markup; here we just length-cap and
+			// preserve newlines.
+			if ( array_key_exists( 'text', $d ) ) {
+				$out['disclaimer']['text'] = $this->trim_clip_multiline( (string) $d['text'], 4000 );
 			}
 		}
 

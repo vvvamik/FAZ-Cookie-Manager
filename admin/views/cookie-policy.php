@@ -167,6 +167,28 @@ $rest_url   = esc_url( rest_url( 'faz/v1/cookie-policy/' ) );
 			</div>
 		</div>
 
+		<!-- 8. Disclaimer (visibility + custom text) -->
+		<div class="faz-card">
+			<div class="faz-card-header">
+				<h3><?php esc_html_e( 'Footer disclaimer', 'faz-cookie-manager' ); ?></h3>
+			</div>
+			<div class="faz-card-body">
+				<div class="faz-form-group">
+					<label class="faz-toggle">
+						<input type="checkbox" id="cp-disclaimer-show" name="disclaimer.show" checked>
+						<span class="faz-toggle-track"></span>
+						<span><?php esc_html_e( 'Show the disclaimer at the bottom of the policy', 'faz-cookie-manager' ); ?></span>
+					</label>
+					<p class="faz-help"><?php esc_html_e( 'When enabled, a short notice is appended to clarify that the generated policy is a template and not legal advice. Recommended for sites without an in-house legal review.', 'faz-cookie-manager' ); ?></p>
+				</div>
+				<div class="faz-form-group">
+					<label for="cp-disclaimer-text"><?php esc_html_e( 'Custom disclaimer text (optional)', 'faz-cookie-manager' ); ?></label>
+					<textarea id="cp-disclaimer-text" name="disclaimer.text" class="faz-input" rows="4" placeholder="<?php echo esc_attr__( 'Leave empty to use the default localised disclaimer.', 'faz-cookie-manager' ); ?>"></textarea>
+					<p class="faz-help"><?php esc_html_e( 'Basic HTML is allowed (links, emphasis, line breaks). Leave blank to fall back to the standard FAZ disclaimer in the active language.', 'faz-cookie-manager' ); ?></p>
+				</div>
+			</div>
+		</div>
+
 		<!-- Actions -->
 		<div class="faz-card">
 			<div class="faz-card-body" style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">

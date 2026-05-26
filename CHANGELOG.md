@@ -2,6 +2,23 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.16.2] — 2026-05-26
+
+### Fixed
+
+- **Cookie Policy URL leak via `?preview_id=` / `?preview_nonce=` query strings** (Gooloo). `Renderer::current_url()` now strips the query string and fragment via `wp_parse_url(..., PHP_URL_PATH)` before passing the result to `home_url()`. Previously rendering the policy while editing it through WordPress preview mode would echo the preview nonce into the public-facing `{{COOKIE_POLICY_URL}}` placeholder.
+- **Cookie inventory layout** — replaced the flat `<dl>/<dt>/<dd>` list (1.16.0/1.16.1) with a per-category HTML5 accordion: `<details class="faz-cookie-policy-details"><summary>{name} <span>{count} cookies</span></summary><table class="faz-cookie-policy-table">…</table></details>`. The `<table>` exposes Cookie / Domain / Duration / Description columns with `data-label` attributes for a mobile card-stack fallback. Zero JS — `<details>` is keyboard-accessible by default. The category heading inside the summary is a `<span role="heading" aria-level="3">` (not `<h3>`) because every block-theme reset coerces `h3` to `display: block` and breaks the single-line summary layout (chevron + name + count on one row).
+- **Disclaimer admin-configurable** — new settings sub-tree `disclaimer.show` (bool, default true) and `disclaimer.text` (custom markup, optional). Replaces the previous hardcoded non-removable footer. Wrapper changed from `<footer class="faz-cookie-policy-disclaimer">` to `<div class="faz-cookie-policy-disclaimer">` so the element does not declare a landmark inside an `<article>`. Pre-1.16.2 default behaviour is preserved (`show=true` + empty `text` → standard localised disclaimer).
+- **Empty placeholder lines suppressed** — `Renderer::strip_empty_label_lines()` post-processes the substituted markdown and removes list-item rows that ended up as a bold label followed only by whitespace, em-dashes, hyphens or commas (e.g. `- **Register / USt-ID:**` when the admin left `company.registry` blank). Mixed-content lines and lines with real text are untouched.
+- **DPO acronym redundancy in translated GDPR scaffolds** — German `(DSB)` (non-standard in DE), Italian / Spanish / French `(DPO)` and Brazilian-Portuguese `/ DPO` removed from `gdpr-strict/{de,it,es,fr,pt-BR}.md`. The localised term ("Datenschutzbeauftragter", "Responsabile della Protezione dei Dati", etc.) carries the meaning unaided. LGPD scaffolds keep `Encarregado de Dados (DPO)` intentionally — that pairing is mandated by Art. 41 LGPD.
+- **European Data Protection Board (EDPB) reference removed from all six GDPR scaffolds** — the `## Supervisory authority` section with `{{EDPB_CONTACT}}` was not adding value (visitors are referred to their national DPA via the existing `lodge a complaint with your national supervisory authority` GDPR Art. 77 line) and bloated the policy page.
+- **`Google Ads` and `Criteo` added to the third-party services allowlist** (Gooloo) — the API allowlist, the renderer's display-name map, the admin i18n labels and the JS group-rendering catalog all updated atomically. Previously selecting "Google Ads" in the admin UI silently dropped it because the allowlist rejected the unknown id.
+- **WordPress-internal cookies excluded from the rendered policy** — `build_cookie_list_html()` now filters out cookies matched by `Frontend::is_wp_internal_cookie()` (`wp-settings-*`, `wordpress_logged_in_*`, `wordpress_test_cookie`, `comment_author_*`, etc.) AND the entire `wordpress-internal` admin category. Mirrors the same filter already in place for the consent banner; visitors never receive these admin-only cookies so listing them in the public policy was misleading.
+
+### Tests
+
+- New E2E spec `tests/e2e/specs/cookie-policy-1.16.2-regressions.spec.ts` — 11 narrow tests against `/faz/v1/cookie-policy/preview` and the public `/policy/` page, one per fix above plus a layout assertion that measures `getBoundingClientRect()` on the summary children to confirm the accordion header sits on a single row.
+
 ## [1.16.1] — 2026-05-25
 
 ### Fixed

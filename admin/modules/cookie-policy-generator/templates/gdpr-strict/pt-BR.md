@@ -12,7 +12,7 @@ O controlador dos dados pessoais coletados por meio de cookies é:
 - **Endereço:** {{COMPANY_ADDRESS}}
 - **E-mail:** {{COMPANY_EMAIL}}
 - **Registro / VAT:** {{COMPANY_REGISTRY}}
-- **Encarregado / DPO:** {{DPO_NAME}} — {{DPO_EMAIL}}
+- **Encarregado:** {{DPO_NAME}} — {{DPO_EMAIL}}
 
 ## O que são cookies
 
@@ -32,7 +32,7 @@ Cookies são pequenos arquivos de texto armazenados no seu dispositivo quando vo
 
 ## Seus direitos (GDPR Art. 12-22)
 
-Acesso, retificação, eliminação, limitação, portabilidade, oposição, revogação do consentimento, reclamação ao Comitê Europeu de Proteção de Dados ({{EDPB_CONTACT}}).
+Acesso, retificação, eliminação, limitação, portabilidade, oposição e revogação do consentimento.
 
 Contato: **{{COMPANY_EMAIL}}**.
 

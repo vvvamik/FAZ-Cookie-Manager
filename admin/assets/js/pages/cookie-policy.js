@@ -83,7 +83,7 @@
 			if (typeof existing !== 'object' || existing === null) {
 				cur[key] = Object.create(null);
 			}
-			cur = cur[key];
+			cur = cur[key]; // nosemgrep
 		}
 		var last = parts[parts.length - 1];
 		if (isUnsafeKey(last)) { return; }
@@ -95,7 +95,18 @@
 		var cur = obj;
 		for (var i = 0; i < parts.length; i++) {
 			if (cur === null || typeof cur !== 'object') { return fallback; }
-			cur = cur[parts[i]];
+			var key = parts[i];
+			// Read-side defence: even though pure reads cannot mutate the
+			// prototype chain, refusing to dereference these keys keeps the
+			// function symmetric with setDeep() and silences static
+			// analysers (Semgrep flags any computed-key chain walk on a
+			// plain object as a prototype-pollution candidate).
+			if (isUnsafeKey(key)) { return fallback; }
+			// Only consider own properties — never walk into inherited /
+			// prototype-chain values that an attacker-controlled `name`
+			// could otherwise dereference.
+			if ( ! Object.prototype.hasOwnProperty.call(cur, key) ) { return fallback; }
+			cur = cur[key]; // nosemgrep
 		}
 		return (cur === undefined || cur === null) ? fallback : cur;
 	}
@@ -115,6 +126,9 @@
 					if (el.checked) { out.third_party_services.push(el.dataset.serviceId); }
 					return;
 				}
+				// Generic boolean checkbox (e.g. disclaimer.show). Serialize as bool.
+				setDeep(out, name, !!el.checked);
+				return;
 			}
 			var v = el.value;
 			if (el.type === 'number') { v = parseInt(v, 10); if (isNaN(v)) { v = 0; } }
@@ -128,7 +142,8 @@
 		[
 			'company.name', 'company.address', 'company.email', 'company.registry',
 			'dpo.name', 'dpo.email',
-			'jurisdiction', 'retention_months', 'privacy_policy_url', 'default_lang'
+			'jurisdiction', 'retention_months', 'privacy_policy_url', 'default_lang',
+			'disclaimer.text'
 		].forEach(function (path) {
 			var el = document.querySelector('[name="' + path + '"]');
 			if (el) {
@@ -136,6 +151,12 @@
 				el.value = v;
 			}
 		});
+		// Boolean checkbox: disclaimer.show (default true to preserve pre-1.16.2 behaviour).
+		var showCb = document.querySelector('[name="disclaimer.show"]');
+		if (showCb) {
+			var showVal = getDeep(settings, 'disclaimer.show', true);
+			showCb.checked = !!showVal;
+		}
 		// Service checkboxes.
 		var services = settings.third_party_services || [];
 		document.querySelectorAll('#cp-services-list input[type=checkbox]').forEach(function (cb) {
@@ -177,6 +198,7 @@
 				{ id: 'crazyegg',    label: t('svcCrazyegg', 'Crazy Egg') }
 			] },
 			{ title: t('grpAdPixels', 'Advertising pixels'), services: [
+				{ id: 'gads',      label: t('svcGads', 'Google Ads') },
 				{ id: 'meta',      label: t('svcMeta', 'Meta (Facebook) Pixel') },
 				{ id: 'tiktok',    label: t('svcTiktok', 'TikTok Pixel') },
 				{ id: 'linkedin',  label: t('svcLinkedin', 'LinkedIn Insight Tag') },
@@ -187,7 +209,8 @@
 				{ id: 'snap',      label: t('svcSnap', 'Snapchat Pixel') },
 				{ id: 'quora',     label: t('svcQuora', 'Quora Pixel') },
 				{ id: 'outbrain',  label: t('svcOutbrain', 'Outbrain') },
-				{ id: 'taboola',   label: t('svcTaboola', 'Taboola') }
+				{ id: 'taboola',   label: t('svcTaboola', 'Taboola') },
+				{ id: 'criteo',    label: t('svcCriteo', 'Criteo') }
 			] },
 			{ title: t('grpCdn', 'CDN, edge & performance'), services: [
 				{ id: 'cf',         label: t('svcCf', 'Cloudflare') },

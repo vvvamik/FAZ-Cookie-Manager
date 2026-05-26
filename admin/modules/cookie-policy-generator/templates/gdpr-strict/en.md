@@ -59,12 +59,6 @@ Under GDPR Art. 12-22 you have the right to:
 
 To exercise these rights contact us at **{{COMPANY_EMAIL}}**. We will respond within one month of receipt (GDPR Art. 12(3)).
 
-## Supervisory authority
-
-You may also contact the European Data Protection Board: {{EDPB_CONTACT}}.
-
-For the EU/EEA, see also: [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}})
-
 ## Changes to this policy
 
 We may update this Cookie Policy from time to time. The "Last updated" date at the top reflects the most recent revision. Material changes will trigger a re-consent prompt on your next visit.

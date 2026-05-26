@@ -12,7 +12,7 @@ Le responsable du traitement des données personnelles collectées via cookies e
 - **Adresse :** {{COMPANY_ADDRESS}}
 - **Courriel :** {{COMPANY_EMAIL}}
 - **Registre / TVA :** {{COMPANY_REGISTRY}}
-- **Délégué à la protection des données (DPO) :** {{DPO_NAME}} — {{DPO_EMAIL}}
+- **Délégué à la protection des données :** {{DPO_NAME}} — {{DPO_EMAIL}}
 
 ## Qu'est-ce qu'un cookie
 
@@ -58,12 +58,6 @@ Aux termes des Art. 12-22 RGPD vous disposez du droit :
 - d'introduire une réclamation auprès de la CNIL
 
 Pour exercer ces droits, contactez-nous à **{{COMPANY_EMAIL}}**. Nous répondrons dans un délai d'un mois (Art. 12(3) RGPD).
-
-## Autorité de contrôle
-
-Vous pouvez contacter la CNIL ou le Comité européen de la protection des données : {{EDPB_CONTACT}}.
-
-Voir aussi : [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}})
 
 ## Modifications
 

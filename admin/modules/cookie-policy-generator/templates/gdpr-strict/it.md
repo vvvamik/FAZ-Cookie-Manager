@@ -12,7 +12,7 @@ Il titolare del trattamento dei dati personali raccolti tramite cookie è:
 - **Indirizzo:** {{COMPANY_ADDRESS}}
 - **Email:** {{COMPANY_EMAIL}}
 - **Registro / Partita IVA:** {{COMPANY_REGISTRY}}
-- **Responsabile della Protezione dei Dati (DPO):** {{DPO_NAME}} — {{DPO_EMAIL}}
+- **Responsabile della Protezione dei Dati:** {{DPO_NAME}} — {{DPO_EMAIL}}
 
 ## Cosa sono i cookie
 
@@ -58,12 +58,6 @@ Ai sensi degli Art. 12-22 GDPR hai diritto a:
 - proporre reclamo al Garante per la protezione dei dati personali
 
 Per esercitare questi diritti contattaci a **{{COMPANY_EMAIL}}**. Risponderemo entro un mese dalla ricezione (Art. 12(3) GDPR).
-
-## Autorità di controllo
-
-Puoi rivolgerti al Garante per la protezione dei dati personali (Italia) o al Comitato europeo per la protezione dei dati: {{EDPB_CONTACT}}.
-
-Vedi anche: [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}})
 
 ## Modifiche
 

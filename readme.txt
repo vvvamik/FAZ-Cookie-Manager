@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.16.1
+Stable tag: 1.16.2
 Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -324,6 +324,9 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.16.2 =
+* Fix: Cookie Policy generator `[faz_cookie_policy_complete]` — Gooloo feedback round. (1) `{{COOKIE_POLICY_URL}}` no longer leaks `?preview_id=&preview_nonce=` query strings from the WordPress preview flow into the public policy text. (2) Cookie inventory now renders as collapsible HTML5 accordion (`<details>/<summary>`) with a real `<table>` per category — previously a flat `<dl>` produced a 700+-line wall of definition pairs. (3) Footer disclaimer is now admin-configurable (toggle + custom text) and wrapped in `<div>` instead of `<footer>`. (4) Empty list-item rows like `**Register / USt-ID:**` are removed when the corresponding placeholder is blank. (5) German DPO label dropped the non-standard "(DSB)" acronym; Italian, French, Spanish and Portuguese GDPR scaffolds dropped the redundant "(DPO)" suffix; "Supervisory authority" section with the European Data Protection Board reference removed from all six GDPR templates. (6) `Google Ads` and `Criteo` added to the third-party services allowlist (previously missing). (7) WordPress-internal cookies (`wp-settings-*`, `wordpress_logged_in_*`, the dedicated "wordpress-internal" admin category) are now excluded from the public policy, matching the same filter already applied to the consent banner.
 
 = 1.16.1 =
 * Fix: Cookie Policy generator (`[faz_cookie_policy_complete]`) was rendering literal JSON like `{"en":"Functional"}` for category names, category descriptions, cookie descriptions, and cookie durations on multilingual installs. Root cause: `build_cookie_list_html()` bypassed the model getters with a JOIN'd raw `SELECT *` and called `esc_html()` directly on i18n-encoded JSON columns. Added a private `decode_i18n_text()` helper that mirrors `Cookie_Table_Shortcode::localize_category_name()` — pick active language, fall back to `en`, then to the first non-empty entry. Description columns now flow through `wp_kses_post()` so the inline `<p>` tags they may contain survive. Reported by James in the wp.org support thread "Performance Impact???".

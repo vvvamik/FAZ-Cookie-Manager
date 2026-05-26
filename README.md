@@ -563,6 +563,12 @@ Value format: `consentid:{base64},consent:yes,action:yes,necessary:yes,functiona
 
 Only the most recent release is listed here. The complete history is in [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog format) and on the [GitHub Releases page](https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases).
 
+### 1.16.2 — 2026-05-26
+- **Fix**: Cookie Policy generator `[faz_cookie_policy_complete]` — round-two of Gooloo feedback on 1.16.x. `{{COOKIE_POLICY_URL}}` no longer leaks WP-preview query strings (`?preview_id=&preview_nonce=`); cookie inventory rendered as collapsible HTML5 accordion (`<details>/<summary>` + per-category `<table>`); footer disclaimer is admin-configurable (toggle + custom text) and wrapped in `<div>` instead of `<footer>`; empty placeholder lines (`**Register / USt-ID:**` etc.) suppressed when the corresponding field is blank.
+- **Fix**: Translated GDPR scaffolds — dropped the non-standard `(DSB)` German DPO acronym + redundant `(DPO)` in Italian/Spanish/French/PT-BR; removed the `## Supervisory authority` block with the European Data Protection Board reference from all six GDPR templates (the existing GDPR Art. 77 "lodge a complaint with your national supervisory authority" line is sufficient).
+- **Fix**: `Google Ads` and `Criteo` added to the third-party services allowlist (previously silently dropped on save). WordPress-internal cookies (`wp-settings-*`, `wordpress_logged_in_*`, the `wordpress-internal` admin category) excluded from the public policy — same filter already applied to the consent banner.
+- **Tests**: new E2E spec `cookie-policy-1.16.2-regressions.spec.ts` — 11 tests, one per fix above plus a `getBoundingClientRect()` layout assertion on the accordion summary.
+
 ### 1.16.1 — 2026-05-25
 - **Fix**: `[faz_cookie_policy_complete]` was rendering literal JSON like `{"en":"Functional"}` for category names and descriptions on multilingual installs. `Renderer::build_cookie_list_html()` now decodes the i18n JSON columns via a new private `decode_i18n_text()` helper (active language → `en` → first non-empty entry). Description fields flow through `wp_kses_post()` so the inline `<p>` they may contain survives. Audit of every other call site that reads `wp_faz_cookies` / `wp_faz_cookie_categories` confirmed no other leaks: controllers decode via `prepare_json()`, model getters via `normalize_multilingual_data()`, and WP-CLI / settings import/export decode explicitly. Reported by James on the wp.org support thread "Performance Impact???".
 

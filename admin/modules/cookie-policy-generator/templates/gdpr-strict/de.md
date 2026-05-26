@@ -12,7 +12,7 @@ Verantwortlicher für die Verarbeitung personenbezogener Daten durch Cookies ist
 - **Adresse:** {{COMPANY_ADDRESS}}
 - **E-Mail:** {{COMPANY_EMAIL}}
 - **Register / USt-ID:** {{COMPANY_REGISTRY}}
-- **Datenschutzbeauftragter (DSB):** {{DPO_NAME}} — {{DPO_EMAIL}}
+- **Datenschutzbeauftragter:** {{DPO_NAME}} — {{DPO_EMAIL}}
 
 ## Was sind Cookies
 
@@ -58,12 +58,6 @@ Nach Art. 12-22 DSGVO haben Sie das Recht auf:
 - Beschwerde bei der zuständigen Aufsichtsbehörde
 
 Zur Ausübung dieser Rechte schreiben Sie uns an **{{COMPANY_EMAIL}}**. Wir antworten innerhalb eines Monats nach Eingang (Art. 12(3) DSGVO).
-
-## Aufsichtsbehörde
-
-Sie können sich auch an den Europäischen Datenschutzausschuss wenden: {{EDPB_CONTACT}}.
-
-Siehe auch: [{{OFFICIAL_RESOURCES_URL}}]({{OFFICIAL_RESOURCES_URL}})
 
 ## Änderungen
 

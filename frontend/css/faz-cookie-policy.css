@@ -6,15 +6,17 @@
  *   1. Lift the typographic max-width constraint that block themes like
  *      Twenty Twenty-Four/Five impose via `.entry-content` (60ch) — which
  *      makes a long legal document feel cramped.
- *   2. Style the non-removable disclaimer footer so it is visually distinct
- *      from body copy (warning-coloured callout, light backdrop). This is
- *      the only "branded" element, by design — the disclaimer needs to be
- *      noticed.
- *   3. Tidy up dt/dd spacing in the auto-populated cookie list because
- *      most themes don't style <dl> at all.
+ *   2. Style the optional disclaimer so it is visually distinct from
+ *      body copy (warning-coloured callout, light backdrop). Visibility
+ *      and text are now admin-configurable; CSS still gives it the
+ *      callout treatment whenever it is rendered.
+ *   3. Style the per-category accordion (<details>/<summary>) and the
+ *      cookie table inside it. Accordion is HTML5-native, JS-free,
+ *      keyboard-accessible. The table inside uses a mobile-friendly
+ *      data-label fallback so the layout collapses to a card stack on
+ *      narrow screens without media queries fighting the theme.
  *
- * Anything else (heading sizes, link colours, paragraph rhythm) is left
- * to the theme.
+ * Anything else (headings, link colours, paragraph rhythm) is theme.
  */
 
 /* 1. Fill the available column. Most block themes constrain content to ~60ch. */
@@ -24,25 +26,173 @@
 	box-sizing: border-box;
 }
 
-/* 3. Cookie list (auto-populated) — themes typically ignore <dl>. */
+/* 3. Cookie list (auto-populated). One <details> per category. */
 .faz-cookie-policy-category {
 	margin: 1em 0 1.5em 0;
 }
-.faz-cookie-policy-category dl {
-	margin: 0.5em 0 0 0;
-}
-.faz-cookie-policy-category dt {
-	font-weight: 600;
-	margin-top: 0.7em;
-}
-.faz-cookie-policy-category dd {
-	margin: 0.2em 0 0 1em;
+
+.faz-cookie-policy-details {
+	border: 1px solid rgba(0, 0, 0, 0.08);
+	border-radius: 6px;
+	margin: 0.5em 0;
+	background: var(--faz-policy-card-bg, transparent);
 }
 
-/* 2. Disclaimer — the one element that intentionally stands out so the
-   visitor sees it. Uses CSS custom properties when the theme defines them
-   so it picks up the theme's accent palette, otherwise falls back to a
-   neutral warning yellow. */
+.faz-cookie-policy-details + .faz-cookie-policy-details {
+	margin-top: 0.6em;
+}
+
+/* Summary layout — selector specificity is intentionally higher
+   (details.X > summary.Y) so block themes that hit `summary` with
+   `display: block` via .entry-content selectors lose the cascade
+   battle. The category heading inside is forced to inline-flex so
+   the theme's default `h3 { display: block; width: 100% }` cannot
+   push the count badge onto a second line. */
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary {
+	cursor: pointer;
+	list-style: none;
+	padding: 0.75em 1em;
+	display: flex;
+	align-items: center;
+	gap: 0.75em;
+	user-select: none;
+	transition: background-color 120ms ease;
+}
+
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary:hover,
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary:focus-visible {
+	background: rgba(0, 0, 0, 0.04);
+	outline: none;
+}
+
+/* Hide the native marker on every engine (Blink/WebKit + Gecko + spec). */
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary::-webkit-details-marker {
+	display: none;
+}
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary::marker {
+	content: '';
+}
+
+/* Custom chevron — sits left of the title, rotates on [open]. */
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary::before {
+	content: '';
+	display: inline-block;
+	width: 0.55em;
+	height: 0.55em;
+	border-right: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	transform: rotate(-45deg);
+	transition: transform 150ms ease;
+	flex: 0 0 auto;
+}
+
+details.faz-cookie-policy-details[open] > summary.faz-cookie-policy-summary::before {
+	transform: rotate(45deg);
+}
+
+/* Category name. The renderer emits this as <span role="heading"
+   aria-level="3"> (changed from <h3> in 1.16.2 because block-level
+   headings inside <summary> get coerced to display:block by every
+   block-theme reset and break the inline layout). Force inline-flex
+   + flex:1 so the chevron, name, count all sit on ONE row. */
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary > .faz-cookie-policy-category-name {
+	display: inline-flex;
+	align-items: center;
+	margin: 0;
+	padding: 0;
+	width: auto;
+	font-size: 1.05em;
+	font-weight: 600;
+	line-height: 1.3;
+	flex: 1 1 auto;
+}
+
+details.faz-cookie-policy-details > summary.faz-cookie-policy-summary > .faz-cookie-policy-count {
+	display: inline-flex;
+	align-items: center;
+	width: auto;
+	font-size: 0.85em;
+	color: var(--faz-policy-muted, #666);
+	font-weight: normal;
+	white-space: nowrap;
+	flex: 0 0 auto;
+}
+
+.faz-cookie-policy-details-body {
+	padding: 0.25em 1em 1em 1em;
+}
+
+/* Cookie table inside the accordion. */
+.faz-cookie-policy-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0.75em 0 0;
+	font-size: 0.92em;
+}
+
+.faz-cookie-policy-table th,
+.faz-cookie-policy-table td {
+	text-align: left;
+	padding: 0.55em 0.7em;
+	vertical-align: top;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.faz-cookie-policy-table thead th {
+	font-weight: 600;
+	border-bottom: 2px solid rgba(0, 0, 0, 0.12);
+	background: rgba(0, 0, 0, 0.02);
+}
+
+.faz-cookie-policy-table code {
+	background: rgba(0, 0, 0, 0.04);
+	padding: 0.1em 0.35em;
+	border-radius: 3px;
+	font-size: 0.95em;
+}
+
+/* Mobile: collapse the table into a card-per-row layout using
+   the data-label attributes the renderer emits on each <td>. */
+@media (max-width: 600px) {
+	.faz-cookie-policy-table thead {
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		height: 1px;
+		width: 1px;
+		overflow: hidden;
+		position: absolute;
+		white-space: nowrap;
+	}
+
+	.faz-cookie-policy-table,
+	.faz-cookie-policy-table tbody,
+	.faz-cookie-policy-table tr,
+	.faz-cookie-policy-table td {
+		display: block;
+		width: 100%;
+	}
+
+	.faz-cookie-policy-table tr {
+		border: 1px solid rgba(0, 0, 0, 0.08);
+		border-radius: 4px;
+		padding: 0.4em 0.5em;
+		margin: 0.5em 0;
+	}
+
+	.faz-cookie-policy-table td {
+		border: 0;
+		padding: 0.2em 0;
+	}
+
+	.faz-cookie-policy-table td::before {
+		content: attr(data-label) ': ';
+		font-weight: 600;
+		display: inline-block;
+		margin-right: 0.4em;
+	}
+}
+
+/* 2. Disclaimer — admin-configurable callout. */
 .faz-cookie-policy-disclaimer {
 	margin-top: 2em;
 	padding: 0.85em 1em;
