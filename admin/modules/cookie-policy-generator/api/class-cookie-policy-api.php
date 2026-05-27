@@ -76,6 +76,29 @@ class Cookie_Policy_Api {
 			'callback'            => array( $this, 'preview' ),
 			'permission_callback' => array( $this, 'check_admin_write' ),
 		) );
+
+		// GET /cookie-policy/suggest-services — auto-detect third-party
+		// services from cookie-scanner domains. Surfaced via the
+		// "Auto-detect from cookie scan" button in the Third-party
+		// services tab of the Cookie Policy admin page; deferred-save
+		// UX so the admin reviews the pre-ticked boxes and clicks Save.
+		register_rest_route( $ns, "/{$base}/suggest-services", array(
+			'methods'             => 'GET',
+			'callback'            => array( $this, 'suggest_services' ),
+			'permission_callback' => array( $this, 'check_admin_read' ),
+		) );
+
+		// GET /cookie-policy/detected-services — same scan-derived list
+		// as /suggest-services minus the already_selected/newly_suggested
+		// partition. Rendered as a "Detected" badge next to each service
+		// the scanner has seen, so the admin understands WHY auto-detect
+		// would tick a given box even before clicking it. Cheap by design:
+		// the renderServicesList() call needs only the set.
+		register_rest_route( $ns, "/{$base}/detected-services", array(
+			'methods'             => 'GET',
+			'callback'            => array( $this, 'detected_services' ),
+			'permission_callback' => array( $this, 'check_admin_read' ),
+		) );
 	}
 
 	/**
@@ -431,6 +454,212 @@ class Cookie_Policy_Api {
 		$v = sanitize_textarea_field( (string) $val );
 		$v = trim( $v );
 		return self::clip_chars( $v, $max );
+	}
+
+	/**
+	 * GET /cookie-policy/suggest-services — return services whose tracking
+	 * domains were observed by the cookie scanner, partitioned against
+	 * what the admin has already declared in faz_cookie_policy_data.
+	 *
+	 * Response shape (mirrors /faz/v1/gvl/suggest for parity):
+	 *   {
+	 *     "service_ids":      ["gads", "tiktok", "youtube"],   // ALL matches
+	 *     "already_selected": ["gads"],                         // intersect with saved
+	 *     "newly_suggested":  ["tiktok", "youtube"],            // matches NOT yet saved
+	 *     "scan_available":   true
+	 *   }
+	 *
+	 * Read-only — never mutates the saved selection. The admin reviews
+	 * the pre-ticked checkboxes in the Third-party services tab and
+	 * commits via Save Selection (deferred-save UX).
+	 *
+	 * @param WP_REST_Request $request
+	 * @return WP_REST_Response
+	 */
+	public function suggest_services( WP_REST_Request $request ) {
+		unset( $request );
+		$matched   = $this->suggest_services_from_scanned_cookies();
+		$saved     = (array) get_option( self::OPTION, array() );
+		$selected  = isset( $saved['third_party_services'] ) && is_array( $saved['third_party_services'] )
+			? array_values( array_unique( array_map( 'strval', $saved['third_party_services'] ) ) )
+			: array();
+
+		$already_selected = array_values( array_intersect( $matched, $selected ) );
+		$newly_suggested  = array_values( array_diff( $matched, $selected ) );
+
+		return new WP_REST_Response( array(
+			'service_ids'      => $matched,
+			'already_selected' => $already_selected,
+			'newly_suggested'  => $newly_suggested,
+			'scan_available'   => $this->cookies_table_has_discovered_rows(),
+		), 200 );
+	}
+
+	/**
+	 * GET /cookie-policy/detected-services — bare-list shape for the
+	 * "Detected" badge rendered next to each checkbox in the Third-party
+	 * services tab. Same scan logic as suggest_services() but stripped
+	 * of the already/newly partition — the JS only needs the set.
+	 *
+	 * @param WP_REST_Request $request
+	 * @return WP_REST_Response
+	 */
+	public function detected_services( WP_REST_Request $request ) {
+		unset( $request );
+		return new WP_REST_Response( array(
+			'service_ids'    => $this->suggest_services_from_scanned_cookies(),
+			'scan_available' => $this->cookies_table_has_discovered_rows(),
+		), 200 );
+	}
+
+	/**
+	 * Core scan helper. Reads scanner-discovered cookie domains from
+	 * wp_faz_cookies, matches each against the bundled
+	 * domain → service-ID map, and returns the union of matched service
+	 * IDs (sorted, unique). Mirrors the pattern in
+	 * \FazCookie\Includes\Gvl::suggest_vendor_ids_from_scanned_cookies()
+	 * — both helpers share the dot-prefix suffix-guard so '.notgoogle.com'
+	 * cannot trick a match against 'google.com'.
+	 *
+	 * Filtered against the API allowlist (see sanitize_settings) so a
+	 * stale entry in the JSON map can never inject a service ID the
+	 * generator does not recognise.
+	 *
+	 * @return string[]
+	 */
+	private function suggest_services_from_scanned_cookies() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'faz_cookies';
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$exists = (string) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+		if ( $exists !== $table ) {
+			return array();
+		}
+		// Scanner-discovered rows only. Manually-added cookies (discovered=0)
+		// represent admin curation, not real network traffic — auto-detecting
+		// a service from a row the admin typed by hand would short-circuit
+		// the very intent of "pre-tick what the scanner saw on your site".
+		// Same restriction as Gvl::suggest_vendor_ids_from_scanned_cookies()
+		// (CodeRabbit PR #127 review hardened this rule).
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$domains = (array) $wpdb->get_col( "SELECT DISTINCT domain FROM `{$table}` WHERE domain <> '' AND discovered = 1" );
+		if ( empty( $domains ) ) {
+			return array();
+		}
+
+		$map = self::load_domain_service_map();
+		if ( empty( $map ) ) {
+			return array();
+		}
+
+		$map_keys = array_keys( $map );
+		$matched  = array();
+		foreach ( $domains as $raw_domain ) {
+			$d = strtolower( ltrim( (string) $raw_domain, '.' ) );
+			if ( '' === $d ) {
+				continue;
+			}
+			// Exact match first.
+			if ( isset( $map[ $d ] ) ) {
+				foreach ( (array) $map[ $d ] as $sid ) {
+					$matched[ (string) $sid ] = true;
+				}
+				continue;
+			}
+			// Suffix match with dot-prefix guard. `m.linkedin.com` ends with
+			// `.linkedin.com` and matches; `notlinkedin.com` ends with
+			// `tlinkedin.com` and correctly does NOT match.
+			foreach ( $map_keys as $key ) {
+				if ( substr( $d, -( strlen( $key ) + 1 ) ) === '.' . $key ) {
+					foreach ( (array) $map[ $key ] as $sid ) {
+						$matched[ (string) $sid ] = true;
+					}
+					break;
+				}
+			}
+		}
+
+		if ( empty( $matched ) ) {
+			return array();
+		}
+
+		// Reuse sanitize_settings' allowlist as the single source of truth.
+		// A stale or PR-mismatched entry in the JSON map cannot inject an
+		// unknown service ID into the UI — sanitize the suggested set the
+		// same way a /settings POST would sanitize an incoming payload.
+		$pruned = $this->sanitize_settings( array( 'third_party_services' => array_keys( $matched ) ) );
+		$ids    = isset( $pruned['third_party_services'] ) ? (array) $pruned['third_party_services'] : array();
+		sort( $ids );
+		return $ids;
+	}
+
+	/**
+	 * Cheap probe used by the suggest/detected callbacks to tell the JS
+	 * whether the cookie scanner has any data at all — distinguishes
+	 * "no matches because no cookies scanned" from "no matches because
+	 * domains don't map to known services". The UI uses this to show a
+	 * helpful "run the cookie scanner first" hint instead of a generic
+	 * "no matches found".
+	 *
+	 * @return bool
+	 */
+	private function cookies_table_has_discovered_rows() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'faz_cookies';
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$exists = (string) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+		if ( $exists !== $table ) {
+			return false;
+		}
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$table}` WHERE discovered = 1" );
+		return $count > 0;
+	}
+
+	/**
+	 * Load the bundled domain → service-ID map. Schema mirrors the GVL
+	 * domain-to-vendor.json so both loaders share the same shape
+	 * (`{ "mappings": { "<domain>": ["<sid>", …] } }`). Cached per request
+	 * via a static — cold reads cost microseconds; this avoids the
+	 * suggest + detected pair on the same admin page hitting the disk
+	 * twice.
+	 *
+	 * @return array<string, string[]>
+	 */
+	private static function load_domain_service_map() {
+		static $cached = null;
+		if ( null !== $cached ) {
+			return $cached;
+		}
+		$file = dirname( __DIR__ ) . '/data/domain-to-service.json';
+		if ( ! is_readable( $file ) ) {
+			$cached = array();
+			return $cached;
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- plugin-shipped JSON data file, not user input.
+		$json    = (string) file_get_contents( $file );
+		$decoded = json_decode( $json, true );
+		if ( ! is_array( $decoded ) || empty( $decoded['mappings'] ) || ! is_array( $decoded['mappings'] ) ) {
+			$cached = array();
+			return $cached;
+		}
+		$out = array();
+		foreach ( $decoded['mappings'] as $domain => $services ) {
+			if ( ! is_string( $domain ) || '' === $domain || ! is_array( $services ) ) {
+				continue;
+			}
+			$sids = array();
+			foreach ( $services as $s ) {
+				if ( is_string( $s ) && '' !== $s ) {
+					$sids[] = sanitize_text_field( $s );
+				}
+			}
+			if ( ! empty( $sids ) ) {
+				$out[ strtolower( $domain ) ] = $sids;
+			}
+		}
+		$cached = $out;
+		return $cached;
 	}
 
 	/**

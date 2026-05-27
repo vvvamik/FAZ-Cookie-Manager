@@ -727,6 +727,15 @@ class Admin {
 						'saved'                    => __( 'Saved.', 'faz-cookie-manager' ),
 						'saveFailed'               => __( 'Save failed', 'faz-cookie-manager' ),
 						'previewFailed'            => __( 'Preview failed', 'faz-cookie-manager' ),
+						// Auto-detect-from-cookie-scan button + Detected badge.
+						'svcDetectedBadge'         => __( 'Detected', 'faz-cookie-manager' ),
+						'svcDetectedTooltip'       => __( 'The cookie scanner observed a tracking domain for this service on your site.', 'faz-cookie-manager' ),
+						'svcAutoDetectScanning'    => __( 'Scanning cookie inventory…', 'faz-cookie-manager' ),
+						'svcAutoDetectNoScan'      => __( 'No scanner data yet. Run the cookie scanner first.', 'faz-cookie-manager' ),
+						'svcAutoDetectNoMatch'     => __( 'No matching services found among scanned cookies.', 'faz-cookie-manager' ),
+						/* translators: 1: number of newly pre-ticked services, 2: number of services already selected */
+						'svcAutoDetectDone'        => __( '%1$d new + %2$d already selected. Click Save to commit.', 'faz-cookie-manager' ),
+						'svcAutoDetectFailed'      => __( 'Auto-detect failed', 'faz-cookie-manager' ),
 						// Group headings.
 						'grpAnalytics'             => __( 'Analytics', 'faz-cookie-manager' ),
 						'grpHeatmaps'              => __( 'Heatmaps & session recording', 'faz-cookie-manager' ),

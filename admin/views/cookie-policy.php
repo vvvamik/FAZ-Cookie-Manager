@@ -104,6 +104,10 @@ $rest_url   = esc_url( rest_url( 'faz/v1/cookie-policy/' ) );
 					<div class="faz-help" style="margin-bottom:.75rem;">
 						<?php echo wp_kses_post( __( '<strong>You probably don\'t need this.</strong> If you\'ve run the cookie scanner (section 5 below), the policy already names every service from your site\'s actual cookies. This section is only useful for services that exchange data with third parties <em>without setting cookies</em> — for example: server-side Google Tag Manager, Meta CAPI server events, pixel iframes that block the visitor cookie store, embedded analytics that opt out of cookies. Leave it empty unless you know one of those applies.', 'faz-cookie-manager' ) ); ?>
 					</div>
+					<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:.75rem;">
+						<button class="faz-btn faz-btn-secondary faz-btn-sm" id="cp-services-auto-detect" type="button" title="<?php esc_attr_e( 'Pre-tick services whose tracking domains were observed by the cookie scanner. You still need to click Save to commit.', 'faz-cookie-manager' ); ?>"><?php esc_html_e( 'Auto-detect from cookie scan', 'faz-cookie-manager' ); ?></button>
+						<span id="cp-services-auto-detect-status" aria-live="polite" aria-atomic="true" style="color:var(--faz-text-secondary, #555);font-size:13px;"></span>
+					</div>
 					<div id="cp-services-list" class="faz-form-group"></div>
 				</div>
 			</details>

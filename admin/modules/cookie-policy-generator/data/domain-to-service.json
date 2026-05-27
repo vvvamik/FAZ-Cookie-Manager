@@ -1,0 +1,171 @@
+{
+  "_comment": "Maps well-known third-party cookie domains to Cookie Policy generator service IDs (allowlist in api/class-cookie-policy-api.php::sanitize_settings). Powers the 'Auto-detect from cookie scan' button on the Cookie Policy admin page: pre-ticks services whose tracking domains were observed by the cookie scanner. Suffix matching uses a dot-prefix guard (so '.notgoogle.com' does NOT match 'google.com'). Schema mirrors admin/modules/gvl/data/domain-to-vendor.json so both maps share the same loader shape. Add a domain only when the mapping is unambiguous (one canonical service per domain). Service IDs MUST exist in the allowlist or the suggestion is silently dropped.",
+  "_schema_version": 1,
+  "mappings": {
+    "googletagmanager.com": ["gtm"],
+    "google-analytics.com": ["ga4"],
+    "googleadservices.com": ["gads"],
+    "googlesyndication.com": ["gads"],
+    "doubleclick.net": ["gads"],
+    "adservice.google.com": ["gads"],
+    "accounts.google.com": ["google_signin"],
+
+    "facebook.com": ["meta"],
+    "facebook.net": ["meta"],
+    "connect.facebook.net": ["meta"],
+
+    "tiktok.com": ["tiktok"],
+    "analytics.tiktok.com": ["tiktok"],
+    "business-api.tiktok.com": ["tiktok"],
+
+    "linkedin.com": ["linkedin"],
+    "licdn.com": ["linkedin"],
+
+    "twitter.com": ["twitter"],
+    "x.com": ["twitter"],
+    "ads-twitter.com": ["twitter"],
+    "t.co": ["twitter"],
+
+    "pinterest.com": ["pinterest"],
+    "ct.pinterest.com": ["pinterest"],
+
+    "reddit.com": ["reddit"],
+    "redditstatic.com": ["reddit"],
+
+    "snapchat.com": ["snap"],
+    "sc-static.net": ["snap"],
+
+    "outbrain.com": ["outbrain"],
+    "taboola.com": ["taboola"],
+
+    "criteo.com": ["criteo"],
+    "criteo.net": ["criteo"],
+
+    "bing.com": ["msuet"],
+    "clarity.ms": ["clarity"],
+
+    "youtube.com": ["youtube"],
+    "youtu.be": ["youtube"],
+    "youtube-nocookie.com": ["youtube"],
+    "ytimg.com": ["youtube"],
+
+    "vimeo.com": ["vimeo"],
+    "vimeocdn.com": ["vimeo"],
+
+    "instagram.com": ["instagram"],
+    "cdninstagram.com": ["instagram"],
+
+    "spotify.com": ["spotify"],
+    "scdn.co": ["spotify"],
+
+    "soundcloud.com": ["soundcloud"],
+    "sndcdn.com": ["soundcloud"],
+
+    "wistia.com": ["wistia"],
+    "wistia.net": ["wistia"],
+
+    "recaptcha.net": ["recaptcha"],
+    "hcaptcha.com": ["hcaptcha"],
+    "challenges.cloudflare.com": ["turnstile"],
+
+    "maps.googleapis.com": ["gmaps"],
+    "maps.gstatic.com": ["gmaps"],
+
+    "mapbox.com": ["mapbox"],
+    "tiles.mapbox.com": ["mapbox"],
+    "openstreetmap.org": ["osm"],
+
+    "cloudflare.com": ["cf"],
+    "cloudflareinsights.com": ["cf"],
+    "fastly.net": ["fastly"],
+    "fastlylb.net": ["fastly"],
+    "akamai.net": ["akamai"],
+    "akamaiedge.net": ["akamai"],
+    "akamaihd.net": ["akamai"],
+    "cloudfront.net": ["cloudfront"],
+    "b-cdn.net": ["bunnycdn"],
+    "bunnycdn.com": ["bunnycdn"],
+    "jsdelivr.net": ["jsdelivr"],
+
+    "stripe.com": ["stripe"],
+    "stripe.network": ["stripe"],
+    "js.stripe.com": ["stripe"],
+
+    "paypal.com": ["paypal"],
+    "paypalobjects.com": ["paypal"],
+
+    "squareup.com": ["square"],
+
+    "shopify.com": ["shopify"],
+    "myshopify.com": ["shopify"],
+
+    "hotjar.com": ["hotjar"],
+    "hotjar.io": ["hotjar"],
+
+    "mouseflow.com": ["mouseflow"],
+    "smartlook.com": ["smartlook"],
+    "luckyorange.com": ["luckyorange"],
+    "fullstory.com": ["fullstory"],
+    "logrocket.com": ["logrocket"],
+    "crazyegg.com": ["crazyegg"],
+
+    "matomo.cloud": ["matomo"],
+    "plausible.io": ["plausible"],
+    "mixpanel.com": ["mixpanel"],
+    "amplitude.com": ["amplitude"],
+    "heap.io": ["heap"],
+    "usefathom.com": ["fathom"],
+    "statcounter.com": ["statcounter"],
+
+    "appleid.apple.com": ["apple_signin"],
+
+    "intercom.io": ["intercom"],
+    "intercom.com": ["intercom"],
+    "intercomcdn.com": ["intercom"],
+
+    "zendesk.com": ["zendesk"],
+    "zdassets.com": ["zendesk"],
+
+    "crisp.chat": ["crisp"],
+    "tawk.to": ["tawk"],
+    "livechatinc.com": ["livechat"],
+    "drift.com": ["drift"],
+    "hs-scripts.com": ["hubspotchat"],
+    "tidio.co": ["tidio"],
+
+    "mailchimp.com": ["mailchimp"],
+    "list-manage.com": ["mailchimp"],
+    "chimpstatic.com": ["mailchimp"],
+
+    "activecampaign.com": ["activecampaign"],
+    "convertkit.com": ["convertkit"],
+    "hubspot.com": ["hubspot"],
+    "hs-analytics.net": ["hubspot"],
+    "sendinblue.com": ["brevo"],
+    "brevo.com": ["brevo"],
+    "klaviyo.com": ["klaviyo"],
+    "marketo.com": ["marketo"],
+    "adobedtm.com": ["adobe"],
+    "demdex.net": ["adobe"],
+    "everesttech.net": ["adobe"],
+
+    "auth0.com": ["auth0"],
+    "okta.com": ["okta"],
+
+    "sentry.io": ["sentry"],
+    "newrelic.com": ["newrelic"],
+    "nr-data.net": ["newrelic"],
+    "datadoghq.com": ["datadog"],
+    "browser-intake-datadoghq.com": ["datadog"],
+    "bugsnag.com": ["bugsnag"],
+    "raygun.io": ["raygun"],
+
+    "optimizely.com": ["optimizely"],
+    "vwo.com": ["vwo"],
+    "abtasty.com": ["abtasty"],
+
+    "onesignal.com": ["onesignal"],
+    "pushwoosh.com": ["pushwoosh"],
+    "fcm.googleapis.com": ["fcm"]
+  }
+}

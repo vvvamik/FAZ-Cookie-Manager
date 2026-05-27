@@ -30,6 +30,19 @@
 	// fetch resolved.
 	var previewRequestId = 0;
 
+	// Per-request monotonic id for the auto-detect button. Same pattern
+	// as previewRequestId — guards against rapid clicks letting an
+	// earlier /suggest-services response paint stale state over a newer
+	// one. Mirrors the GVL admin page's autoDetectRequestId (PR #127).
+	var autoDetectRequestId = 0;
+
+	// Set of service IDs the scanner has observed on this site. Populated
+	// in init() by GET /detected-services. Used by renderServicesList()
+	// to draw a small "Detected" badge next to the matching checkboxes so
+	// the admin understands why auto-detect would pre-tick them. Empty
+	// object (never null) so the lookup is always safe.
+	var detectedServiceIds = Object.create(null);
+
 	function api(method, path, body) {
 		var FAZ = window.FAZ;
 		var verb = String(method || 'GET').toUpperCase();
@@ -316,6 +329,19 @@
 				cb.dataset.serviceId = svc.id;
 				label.appendChild(cb);
 				label.appendChild(document.createTextNode(svc.label));
+				// "Detected" badge — only when the cookie scanner has actually
+				// observed a tracking domain associated with this service ID.
+				// Uses a null-prototype lookup (detectedServiceIds is built via
+				// Object.create(null)) so a service ID accidentally equal to
+				// "constructor" or "toString" can't false-positive.
+				if (Object.prototype.hasOwnProperty.call(detectedServiceIds, svc.id)) {
+					var badge = document.createElement('span');
+					badge.className = 'faz-svc-detected-badge';
+					badge.title = t( 'svcDetectedTooltip', 'The cookie scanner observed a tracking domain for this service on your site.' );
+					badge.style.cssText = 'margin-left:4px;padding:1px 6px;border-radius:8px;background:#dff5e1;color:#1d7d28;font-size:10px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;';
+					badge.textContent = t( 'svcDetectedBadge', 'Detected' );
+					label.appendChild(badge);
+				}
 				wrap.appendChild(label);
 			});
 			container.appendChild(wrap);
@@ -362,12 +388,107 @@
 		}
 	}
 
+	function setAutoDetectStatus(msg, kind) {
+		var el = document.getElementById('cp-services-auto-detect-status');
+		if (!el) { return; }
+		el.textContent = msg || '';
+		el.style.color = kind === 'error' ? '#c4302b' : (kind === 'ok' ? '#1d7d28' : 'var(--faz-text-secondary, #555)');
+	}
+
+	function autoDetectServices() {
+		var btn = document.getElementById('cp-services-auto-detect');
+		if (!btn || btn.disabled) { return; }
+		// Race-guard: capture this invocation's id before issuing the
+		// async fetch. If the user clicks again before we resolve, a
+		// newer id is captured and our then-handler bails out so the
+		// older /suggest-services response never paints over the newer
+		// result. Mirrors the GVL admin page's pattern (PR #127).
+		autoDetectRequestId += 1;
+		var myReqId = autoDetectRequestId;
+		btn.disabled = true;
+		setAutoDetectStatus(t( 'svcAutoDetectScanning', 'Scanning cookie inventory…' ), '');
+
+		api('GET', 'suggest-services')
+			.then(function (resp) {
+				if (myReqId !== autoDetectRequestId) { return; } // stale, drop
+				btn.disabled = false;
+				if (!resp || resp.scan_available === false) {
+					setAutoDetectStatus(t( 'svcAutoDetectNoScan', 'No scanner data yet. Run the cookie scanner first.' ), 'error');
+					return;
+				}
+				var newly  = (resp && Array.isArray(resp.newly_suggested))  ? resp.newly_suggested  : [];
+				var already = (resp && Array.isArray(resp.already_selected)) ? resp.already_selected : [];
+				if (newly.length === 0 && already.length === 0) {
+					setAutoDetectStatus(t( 'svcAutoDetectNoMatch', 'No matching services found among scanned cookies.' ), 'ok');
+					return;
+				}
+				// Pre-tick the newly_suggested checkboxes. Already-selected
+				// boxes stay checked (they already are). Save commits.
+				var list = document.getElementById('cp-services-list');
+				if (list) {
+					var boxes = list.querySelectorAll('input[type=checkbox][data-service-id]');
+					for (var i = 0; i < boxes.length; i++) {
+						var sid = boxes[i].dataset.serviceId;
+						if (newly.indexOf(sid) !== -1) {
+							boxes[i].checked = true;
+						}
+					}
+				}
+				// Accept both positional (%1$d / %2$d — WP i18n best practice
+				// for translators that need to reorder) AND plain %d / %d
+				// in the English fallback string. Pure ordered .replace('%d', …)
+				// chains break under reordering — same fragility CodeRabbit
+				// flagged on the GVL admin page (F006, below_gate).
+				var template = t( 'svcAutoDetectDone', '%1$d new + %2$d already selected. Click Save to commit.' );
+				var formatted = template
+					.replace(/%1\$d/g, String(newly.length))
+					.replace(/%2\$d/g, String(already.length))
+					.replace('%d', String(newly.length))
+					.replace('%d', String(already.length));
+				setAutoDetectStatus(formatted, 'ok');
+			})
+			.catch(function (err) {
+				if (myReqId !== autoDetectRequestId) { return; }
+				btn.disabled = false;
+				setAutoDetectStatus(t( 'svcAutoDetectFailed', 'Auto-detect failed' ) + ': ' + err.message, 'error');
+			});
+	}
+
 	function init() {
+		// Initial render runs sync (badges absent because detected set is
+		// empty); the /detected-services fetch below re-renders with the
+		// "Detected" badges painted in. This keeps the page interactive
+		// during the round-trip rather than blocking on a network call
+		// the user may not even care about (some sites have no scanner
+		// data at all). Both rendering passes preserve the checkbox
+		// state because writeForm() runs after the second render.
 		renderServicesList();
 
-		api('GET', 'settings')
-			.then(function (data) { writeForm(data); })
-			.catch(function (err) { setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + err.message, 'error'); });
+		Promise.all([
+			api('GET', 'settings').catch(function (err) { setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + err.message, 'error'); return null; }),
+			api('GET', 'detected-services').catch(function () { return { service_ids: [] }; })
+		]).then(function (results) {
+			var settings = results[0];
+			var detected = results[1] && Array.isArray(results[1].service_ids) ? results[1].service_ids : [];
+			// Re-render with badges if the scanner found anything. Empty
+			// detected list: skip the rerender (badges identical to first
+			// pass — no point re-painting the DOM).
+			if (detected.length > 0) {
+				detectedServiceIds = Object.create(null);
+				for (var i = 0; i < detected.length; i++) {
+					detectedServiceIds[detected[i]] = true;
+				}
+				renderServicesList();
+			}
+			// writeForm runs LAST so checkbox state from settings overrides
+			// any default in the freshly-rendered DOM.
+			if (settings) { writeForm(settings); }
+		});
+
+		var autoDetectBtn = document.getElementById('cp-services-auto-detect');
+		if (autoDetectBtn) {
+			autoDetectBtn.addEventListener('click', autoDetectServices);
+		}
 
 		document.getElementById('faz-cookie-policy-form').addEventListener('submit', function (e) {
 			e.preventDefault();
