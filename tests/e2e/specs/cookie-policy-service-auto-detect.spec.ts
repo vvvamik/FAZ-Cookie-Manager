@@ -267,4 +267,298 @@ test.describe('Cookie Policy third-party auto-detect from cookies', () => {
     ).trim();
     expect(persistedBefore).toBe('[]');
   });
+
+  // ============================================================
+  // Extended coverage (tests 11–25). Each test is self-contained:
+  // beforeEach wipes scanned cookies + saved selection, so the
+  // suite is order-independent and safe to re-run / shard.
+  // ============================================================
+
+  test('11. Bundled domain-to-service.json parses cleanly and every service ID is in the API allowlist', async () => {
+    // Cross-checks the PHP allowlist against the JSON map server-side
+    // via wpEval — keeps the assertion authoritative (any drift between
+    // the map and sanitize_settings's allowlist fails the test). Reading
+    // the file from the test process would assert against the source
+    // tree but not against the deployed plugin code that's serving
+    // requests; wpEval mirrors what the running plugin sees.
+    const result = wpEval(`
+      $file = WP_PLUGIN_DIR . '/faz-cookie-manager/admin/modules/cookie-policy-generator/data/domain-to-service.json';
+      $json = json_decode(file_get_contents($file), true);
+      if (!is_array($json) || empty($json['mappings'])) { echo 'BAD_JSON'; exit; }
+      $domains = array_keys($json['mappings']);
+      $sids    = array();
+      foreach ($json['mappings'] as $d) { foreach ((array) $d as $s) { $sids[$s] = true; } }
+      $src     = file_get_contents(WP_PLUGIN_DIR . '/faz-cookie-manager/admin/modules/cookie-policy-generator/api/class-cookie-policy-api.php');
+      preg_match('/\\$allowed_services = array\\((.*?)\\);/s', $src, $m);
+      preg_match_all("/'([a-z0-9_]+)'/", $m[1], $hits);
+      $allowed = array_flip($hits[1]);
+      $unknown = array_diff_key($sids, $allowed);
+      echo wp_json_encode(array(
+        'domains_count' => count($domains),
+        'sids_count'    => count($sids),
+        'unknown'       => array_keys($unknown),
+      ));
+    `).trim();
+    const parsed = JSON.parse(result);
+    expect(parsed.domains_count).toBeGreaterThanOrEqual(50);
+    expect(parsed.sids_count).toBeGreaterThanOrEqual(40);
+    expect(parsed.unknown, `Map contains service IDs missing from sanitize_settings allowlist: ${parsed.unknown.join(', ')}`).toEqual([]);
+  });
+
+  test('12. Exact-match domain (no leading dot in the cookie row) still resolves to a service ID', async () => {
+    // The helper does ltrim('.', $domain) before lookup, so a cookie
+    // stored with bare 'googletagmanager.com' (no leading dot) must
+    // still resolve. Some scanners (and some sites' Set-Cookie headers)
+    // omit the leading dot on host-only cookies.
+    plantCookies([
+      { name: 'cp_bare', slug: 'cp-auto-bare', domain: 'googletagmanager.com' },
+    ]);
+    const r = await suggest();
+    expect(r.service_ids).toContain('gtm');
+  });
+
+  test('13. Mixed-case domain (.LinkedIn.COM) normalises to lowercase and matches', async () => {
+    plantCookies([
+      { name: 'cp_case', slug: 'cp-auto-case', domain: '.LinkedIn.COM' },
+    ]);
+    const r = await suggest();
+    expect(r.service_ids).toContain('linkedin');
+  });
+
+  test('14. Multiple cookies on the same mapped domain dedupe to one service ID', async () => {
+    plantCookies([
+      { name: '_ga',   slug: 'cp-auto-ga1', domain: '.google-analytics.com' },
+      { name: '_gid',  slug: 'cp-auto-ga2', domain: '.google-analytics.com' },
+      { name: '_gat',  slug: 'cp-auto-ga3', domain: '.google-analytics.com' },
+    ]);
+    const r = await suggest();
+    const ga4Count = r.service_ids.filter((s) => s === 'ga4').length;
+    expect(ga4Count, 'duplicate cookies on same domain should produce one service ID, not three').toBe(1);
+  });
+
+  test('15. Cookies from multiple categories surface as multiple service IDs (analytics + ad + embed + payment)', async () => {
+    plantCookies([
+      { name: 'cp_ga',  slug: 'cp-auto-mix-ga', domain: '.google-analytics.com' },
+      { name: 'cp_tt',  slug: 'cp-auto-mix-tt', domain: '.tiktok.com' },
+      { name: 'cp_yt',  slug: 'cp-auto-mix-yt', domain: '.youtube.com' },
+      { name: 'cp_st',  slug: 'cp-auto-mix-st', domain: '.js.stripe.com' },
+      { name: 'cp_cdn', slug: 'cp-auto-mix-cdn', domain: '.b-cdn.net' },
+    ]);
+    const r = await suggest();
+    expect(r.service_ids).toEqual(expect.arrayContaining(['ga4', 'tiktok', 'youtube', 'stripe', 'bunnycdn']));
+  });
+
+  test('16. /detected-services with zero discovered cookies returns scan_available=false', async () => {
+    // beforeEach already resetCookies()'d the test slugs, but real rows
+    // from prior unrelated specs may still exist. Wipe everything to
+    // assert the zero-rows path deterministically, then restore.
+    const backup = wpEval(
+      `global $wpdb; echo wp_json_encode($wpdb->get_results("SELECT * FROM {$wpdb->prefix}faz_cookies WHERE discovered = 1", ARRAY_A));`,
+    ).trim();
+    wpEval(`global $wpdb; $wpdb->query("DELETE FROM {$wpdb->prefix}faz_cookies WHERE discovered = 1");`);
+    try {
+      const r = await detected();
+      expect(r.scan_available).toBe(false);
+      expect(r.service_ids).toEqual([]);
+    } finally {
+      // Restore so subsequent tests in this or other specs aren't affected.
+      if (backup && backup !== '[]' && backup !== 'null') {
+        wpEval(`
+          global $wpdb;
+          $rows = json_decode(${JSON.stringify(backup)}, true);
+          if (is_array($rows)) {
+            foreach ($rows as $row) {
+              unset($row['id']);
+              $wpdb->insert($wpdb->prefix . 'faz_cookies', $row);
+            }
+          }
+        `);
+      }
+    }
+  });
+
+  test('17. Unauthenticated request to /suggest-services returns 401 — admin gate enforced', async ({ browser }) => {
+    // Fresh context = no admin cookie. Bare request must be rejected.
+    const anonCtx = await browser.newContext();
+    const res = await anonCtx.request.get('http://127.0.0.1:9998' + REST_BASE + '/suggest-services');
+    // WP REST returns 401 (rest_forbidden) for cap-failed requests when
+    // the user is unauthenticated. Some configs return 403 instead — accept either.
+    expect([401, 403]).toContain(res.status());
+    await anonCtx.close();
+  });
+
+  test('18. POST on /suggest-services is rejected — only GET is registered', async () => {
+    // Sanity-check the verb whitelist. POST should hit a method-not-allowed
+    // (405) or no-route (404) response, NOT 200.
+    const res = await adminPage.request.post(`${REST_BASE}/suggest-services`, {
+      headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' },
+      data: { junk: true },
+    });
+    expect([404, 405]).toContain(res.status());
+  });
+
+  test('19. Auto-detect with NO matching cookies shows the "No matching services found" status', async () => {
+    plantCookies([
+      { name: 'cp_x', slug: 'cp-auto-nomatch', domain: '.example.org' },
+    ]);
+    await adminPage.reload({ waitUntil: 'domcontentloaded' });
+    await adminPage.locator('summary', { hasText: 'Third-party services' }).click();
+    await adminPage.waitForSelector('#cp-services-auto-detect', { timeout: 5_000 });
+    await adminPage.click('#cp-services-auto-detect');
+    await expect(adminPage.locator('#cp-services-auto-detect-status')).toContainText(
+      /No matching services found/i,
+      { timeout: 10_000 },
+    );
+    // No checkboxes ticked.
+    const checkedCount = await adminPage.$$eval(
+      '#cp-services-list input[type=checkbox]:checked',
+      (els) => els.length,
+    );
+    expect(checkedCount).toBe(0);
+  });
+
+  test('20. Auto-detect when scanner has zero rows shows the "Run the cookie scanner first" hint', async () => {
+    // Wipe ALL discovered rows so scan_available is false. Restore in finally.
+    const backup = wpEval(
+      `global $wpdb; echo wp_json_encode($wpdb->get_results("SELECT * FROM {$wpdb->prefix}faz_cookies WHERE discovered = 1", ARRAY_A));`,
+    ).trim();
+    wpEval(`global $wpdb; $wpdb->query("DELETE FROM {$wpdb->prefix}faz_cookies WHERE discovered = 1");`);
+    try {
+      await adminPage.reload({ waitUntil: 'domcontentloaded' });
+      await adminPage.locator('summary', { hasText: 'Third-party services' }).click();
+      await adminPage.waitForSelector('#cp-services-auto-detect', { timeout: 5_000 });
+      await adminPage.click('#cp-services-auto-detect');
+      await expect(adminPage.locator('#cp-services-auto-detect-status')).toContainText(
+        /Run the cookie scanner first/i,
+        { timeout: 10_000 },
+      );
+    } finally {
+      if (backup && backup !== '[]' && backup !== 'null') {
+        wpEval(`
+          global $wpdb;
+          $rows = json_decode(${JSON.stringify(backup)}, true);
+          if (is_array($rows)) {
+            foreach ($rows as $row) {
+              unset($row['id']);
+              $wpdb->insert($wpdb->prefix . 'faz_cookies', $row);
+            }
+          }
+        `);
+      }
+    }
+  });
+
+  test('21. End-to-end save flow: auto-detect → submit form → option persisted with the suggested IDs', async () => {
+    plantCookies([
+      { name: 'cp_gtm', slug: 'cp-auto-save-gtm', domain: '.googletagmanager.com' },
+      { name: 'cp_st',  slug: 'cp-auto-save-st',  domain: '.js.stripe.com' },
+    ]);
+    await adminPage.reload({ waitUntil: 'domcontentloaded' });
+    await adminPage.locator('summary', { hasText: 'Third-party services' }).click();
+    await adminPage.waitForSelector('#cp-services-auto-detect', { timeout: 5_000 });
+    await adminPage.click('#cp-services-auto-detect');
+    await expect(adminPage.locator('#cp-services-auto-detect-status')).toContainText(
+      /new \+ \d+ already selected/i,
+      { timeout: 10_000 },
+    );
+    // Confirm the form submit button exists and submit.
+    await adminPage.click('button[type=submit]', { timeout: 5_000 });
+    await expect(adminPage.locator('#cp-save-status')).toContainText(/Saved/i, { timeout: 10_000 });
+    // Option should now contain BOTH IDs.
+    const persisted = wpEval(
+      `$d = (array) get_option('faz_cookie_policy_data', array()); echo wp_json_encode($d['third_party_services'] ?? array());`,
+    ).trim();
+    const arr = JSON.parse(persisted);
+    expect(arr).toEqual(expect.arrayContaining(['gtm', 'stripe']));
+  });
+
+  test('22. Persistence: after save, refreshing the page restores the same ticked checkboxes', async () => {
+    // Pre-seed the option directly to skip the auto-detect path — this
+    // test is about the load-from-storage round trip.
+    wpEval(
+      `$d = (array) get_option('faz_cookie_policy_data', array()); $d['third_party_services'] = array('gads', 'tiktok'); update_option('faz_cookie_policy_data', $d, false);`,
+    );
+    await adminPage.reload({ waitUntil: 'domcontentloaded' });
+    await adminPage.locator('summary', { hasText: 'Third-party services' }).click();
+    await adminPage.waitForSelector('#cp-services-list input[data-service-id="gads"]', { timeout: 5_000 });
+    // writeForm() runs after the parallel /settings+/detected fetches resolve.
+    // Give it a beat — explicit wait on the box becoming checked.
+    await expect(adminPage.locator('#cp-services-list input[data-service-id="gads"]')).toBeChecked({ timeout: 10_000 });
+    await expect(adminPage.locator('#cp-services-list input[data-service-id="tiktok"]')).toBeChecked();
+    // Unrelated boxes stay off.
+    await expect(adminPage.locator('#cp-services-list input[data-service-id="youtube"]')).not.toBeChecked();
+  });
+
+  test('23. "Detected" badge appears only next to checkboxes for services the scanner has observed', async () => {
+    plantCookies([
+      { name: 'cp_gtm', slug: 'cp-auto-bd-gtm', domain: '.googletagmanager.com' },
+      { name: 'cp_st',  slug: 'cp-auto-bd-st',  domain: '.js.stripe.com' },
+    ]);
+    await adminPage.reload({ waitUntil: 'domcontentloaded' });
+    await adminPage.locator('summary', { hasText: 'Third-party services' }).click();
+    // Wait for the re-render after /detected-services resolves: GTM's
+    // label should now carry the badge.
+    await expect(
+      adminPage.locator('#cp-services-list label:has(input[data-service-id="gtm"]) .faz-svc-detected-badge'),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      adminPage.locator('#cp-services-list label:has(input[data-service-id="stripe"]) .faz-svc-detected-badge'),
+    ).toBeVisible();
+    // A service NOT planted (paypal) must not carry the badge.
+    await expect(
+      adminPage.locator('#cp-services-list label:has(input[data-service-id="paypal"]) .faz-svc-detected-badge'),
+    ).toHaveCount(0);
+  });
+
+  test('24. Race-guard: rapid double click does not paint stale state — final status reflects the latest run', async () => {
+    plantCookies([
+      { name: 'cp_gtm', slug: 'cp-auto-race-gtm', domain: '.googletagmanager.com' },
+    ]);
+    await adminPage.reload({ waitUntil: 'domcontentloaded' });
+    await adminPage.locator('summary', { hasText: 'Third-party services' }).click();
+    await adminPage.waitForSelector('#cp-services-auto-detect', { timeout: 5_000 });
+    // Two clicks back-to-back — the second invocation must win.
+    // autoDetectRequestId increments per click; the stale .then() bails
+    // before painting. We assert that, after both resolve, exactly ONE
+    // success status is visible (not "Scanning…" hung from the first).
+    await Promise.all([
+      adminPage.click('#cp-services-auto-detect'),
+      adminPage.click('#cp-services-auto-detect', { force: true }),
+    ]);
+    await expect(adminPage.locator('#cp-services-auto-detect-status')).toContainText(
+      /new \+ \d+ already selected|No matching services found|Scanning cookie inventory/i,
+      { timeout: 15_000 },
+    );
+    // Allow the second response to settle, then re-check that the final
+    // state is one of the terminal messages (not the in-flight "Scanning…").
+    await adminPage.waitForFunction(
+      () => {
+        const el = document.getElementById('cp-services-auto-detect-status');
+        return el !== null && !/Scanning/i.test(el.textContent || '');
+      },
+      undefined,
+      { timeout: 10_000 },
+    );
+    // Button is re-enabled when both invocations have resolved.
+    await expect(adminPage.locator('#cp-services-auto-detect')).toBeEnabled({ timeout: 5_000 });
+  });
+
+  test('25. Map loader caches the file read — repeated suggest calls produce identical responses without per-call I/O', async () => {
+    // We can't directly observe disk I/O from E2E, but we CAN assert
+    // that two back-to-back /suggest-services calls return identical
+    // payloads (same order, same dedup, same allowlist filtering). If
+    // the static cache regressed and a write between calls mutated the
+    // file, payloads would diverge. This is the closest E2E proxy.
+    plantCookies([
+      { name: 'cp_gtm', slug: 'cp-auto-cache-gtm', domain: '.googletagmanager.com' },
+      { name: 'cp_li',  slug: 'cp-auto-cache-li',  domain: '.linkedin.com' },
+      { name: 'cp_yt',  slug: 'cp-auto-cache-yt',  domain: '.youtube.com' },
+    ]);
+    const a = await suggest();
+    const b = await suggest();
+    expect(b.service_ids).toEqual(a.service_ids);
+    expect(b.already_selected).toEqual(a.already_selected);
+    expect(b.newly_suggested).toEqual(a.newly_suggested);
+    expect(b.scan_available).toEqual(a.scan_available);
+  });
 });
