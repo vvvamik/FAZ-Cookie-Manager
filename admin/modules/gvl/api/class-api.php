@@ -338,6 +338,7 @@ class Api extends Rest_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function suggest_from_cookies( $request ) {
+		unset( $request );
 		$gvl       = Gvl::get_instance();
 		$suggested = $gvl->suggest_vendor_ids_from_scanned_cookies();
 		$selected  = (array) get_option( 'faz_gvl_selected_vendors', array() );

@@ -412,7 +412,7 @@
 			.then(function (resp) {
 				if (myReqId !== autoDetectRequestId) { return; } // stale, drop
 				btn.disabled = false;
-				if (!resp || resp.scan_available === false) {
+				if (!resp || resp.scan_available !== true) {
 					setAutoDetectStatus(t( 'svcAutoDetectNoScan', 'No scanner data yet. Run the cookie scanner first.' ), 'error');
 					return;
 				}

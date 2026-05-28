@@ -361,7 +361,7 @@
 	};
 
 	// ── Loading states ───────────────────────────────────────
-	FAZ.btnLoading = function (btn, loading) {
+	FAZ.btnLoading = function (btn, loading, loadingLabel) {
 		if (!btn) return;
 		if (loading) {
 			btn.dataset.origText = btn.textContent;
@@ -370,7 +370,10 @@
 			spinner.className = 'faz-spinner';
 			btn.textContent = '';
 			btn.appendChild(spinner);
-			btn.appendChild(document.createTextNode(' Saving...'));
+			// Default label is "Saving..."; callers performing a non-save
+			// operation (e.g. a read-only scan) pass their own label so the
+			// spinner copy matches the action.
+			btn.appendChild(document.createTextNode(' ' + (loadingLabel || 'Saving...')));
 		} else {
 			btn.disabled = false;
 			btn.textContent = btn.dataset.origText || 'Save';

@@ -661,13 +661,14 @@ class Admin {
 						'vendors'                  => __( 'Vendors: ', 'faz-cookie-manager' ),
 						'lastUpdated'              => __( 'Last Updated: ', 'faz-cookie-manager' ),
 						// Auto-detect-vendors-from-cookie-scan button feedback.
+						'autoDetectScanning'       => __( 'Scanning cookie inventory…', 'faz-cookie-manager' ),
 						'autoDetectNoGvl'          => __( 'Update the Global Vendor List first, then try Auto-detect again.', 'faz-cookie-manager' ),
 						'autoDetectNoMatch'        => __( 'No matching ad-tech vendors were found in the scanned cookies. Run the cookie scanner first if you have not.', 'faz-cookie-manager' ),
 						/* translators: %d: number of vendors pre-ticked from the cookie scan */
 						'autoDetectAdded'          => __( 'Pre-ticked %d vendor(s) from cookie scan. Click Save Selection to apply.', 'faz-cookie-manager' ),
 						/* translators: %d: number of auto-detected vendors already in the selection */
 						'autoDetectAllAlready'     => __( 'All %d auto-detected vendor(s) were already in your selection.', 'faz-cookie-manager' ),
-						/* translators: 1: number of newly pre-ticked vendors, 2: number already selected */
+						/* translators: %1$d: number of newly pre-ticked vendors, %2$d: number already selected */
 						'autoDetectMixed'          => __( 'Pre-ticked %1$d new vendor(s), %2$d were already selected. Click Save Selection to apply.', 'faz-cookie-manager' ),
 						'autoDetectFailed'         => __( 'Auto-detect failed. Check the cookie scanner and try again.', 'faz-cookie-manager' ),
 					),
@@ -723,7 +724,7 @@ class Admin {
 						'attestDpfScc'                 => __( 'I attest to having a DPF / SCC / DPA agreement with ipinfo.io for cross-border data transfer of EU/UK visitor IPs (required for opt-in)', 'faz-cookie-manager' ),
 						// PIPL panel.
 						'piplAttestText'               => __( 'I attest to having a Standard Contract (PIPL Art. 38) or CAC security assessment (Art. 40) for cross-border data transfers OF data subject to PIPL, OR to not process any data that requires such mechanisms.', 'faz-cookie-manager' ),
-						/* translators: 1: localised timestamp, 2: WP user id of the attesting admin */
+						/* translators: %1$s: localised timestamp, %2$s: WP user id of the attesting admin */
 						'piplAttestedAt'               => __( 'Attested at %1$s by user ID %2$s', 'faz-cookie-manager' ),
 						// Common buttons.
 						'save'                         => __( 'Save', 'faz-cookie-manager' ),
@@ -743,7 +744,7 @@ class Admin {
 						'svcAutoDetectScanning'    => __( 'Scanning cookie inventory…', 'faz-cookie-manager' ),
 						'svcAutoDetectNoScan'      => __( 'No scanner data yet. Run the cookie scanner first.', 'faz-cookie-manager' ),
 						'svcAutoDetectNoMatch'     => __( 'No matching services found among scanned cookies.', 'faz-cookie-manager' ),
-						/* translators: 1: number of newly pre-ticked services, 2: number of services already selected */
+						/* translators: %1$d: number of newly pre-ticked services, %2$d: number of services already selected */
 						'svcAutoDetectDone'        => __( '%1$d new + %2$d already selected. Click Save to commit.', 'faz-cookie-manager' ),
 						'svcAutoDetectFailed'      => __( 'Auto-detect failed', 'faz-cookie-manager' ),
 						// Group headings.

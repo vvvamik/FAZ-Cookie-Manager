@@ -549,7 +549,7 @@ test.describe('Cookie Policy third-party auto-detect from cookies', () => {
     await expect(adminPage.locator('#cp-services-auto-detect')).toBeEnabled({ timeout: 5_000 });
   });
 
-  test('26. Pre-existing admin selection is preserved: 5 non-scannered services stay ticked when Auto-detect adds a new one and Save is clicked', async () => {
+  test('25. Pre-existing admin selection is preserved: 5 non-scannered services stay ticked when Auto-detect adds a new one and Save is clicked', async () => {
     // Scenario: an admin already configured Third-party services manually
     // before this feature shipped — five services with no cookie footprint
     // on the live site (auth0, square, akismet, pardot, fcm). Then the
@@ -642,7 +642,7 @@ test.describe('Cookie Policy third-party auto-detect from cookies', () => {
     expect(phantom).toEqual([]);
   });
 
-  test('25. Map loader caches the file read — repeated suggest calls produce identical responses without per-call I/O', async () => {
+  test('26. Map loader caches the file read — repeated suggest calls produce identical responses without per-call I/O', async () => {
     // We can't directly observe disk I/O from E2E, but we CAN assert
     // that two back-to-back /suggest-services calls return identical
     // payloads (same order, same dedup, same allowlist filtering). If

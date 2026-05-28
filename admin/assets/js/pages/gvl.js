@@ -355,7 +355,9 @@
 		// other admin pages.
 		var requestId = ++autoDetectRequestId;
 		var status = document.getElementById('faz-gvl-auto-detect-status');
-		FAZ.btnLoading(btn, true);
+		// Read-only scan, not a save — pass a scan-specific spinner label so
+		// the button doesn't misleadingly read "Saving..." during detection.
+		FAZ.btnLoading(btn, true, __('gvl.autoDetectScanning', 'Scanning cookie inventory…'));
 		if (status) { status.textContent = ''; }
 
 		FAZ.get('gvl/suggest').then(function (data) {
@@ -418,12 +420,12 @@
 				msg = __('gvl.autoDetectAdded', 'Pre-ticked %d vendor(s) from cookie scan. Click Save Selection to apply.')
 					.replace('%d', added.length);
 			} else {
-				// Dual-mode formatter: class-admin.php registers this string with
-				// positional %1$d/%2$d (WP best practice so translators can
-				// reorder), but a plain .replace('%d', …) chain no-ops on a
-				// positional string. Handle BOTH positional and plain %d so the
-				// English fallback (plain %d) and the registered string render
-				// correctly. Mirrors cookie-policy.js svcAutoDetectDone.
+				// Dual-mode formatter. Both the registered string (class-admin.php)
+				// and the English fallback below use positional %1$d/%2$d so
+				// translators can reorder the two counts; the positional replaces
+				// handle that case. The trailing plain-%d replaces are a defensive
+				// no-op kept only so a translation that happens to use plain %d
+				// still renders. Mirrors cookie-policy.js svcAutoDetectDone.
 				var template = __('gvl.autoDetectMixed', 'Pre-ticked %1$d new vendor(s), %2$d were already selected. Click Save Selection to apply.');
 				msg = template
 					.replace(/%1\$d/g, String(added.length))
