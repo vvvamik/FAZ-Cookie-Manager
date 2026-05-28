@@ -15,11 +15,21 @@
  *      silently.
  *   3. Suffix matching is exact-domain only (`.notlinkedin.com` MUST
  *      NOT match `linkedin.com`).
- *   4. `newly_suggested` excludes IDs already in
+ *   4. Subdomain match: `.m.linkedin.com` DOES match the `linkedin.com`
+ *      map entry (dot-prefix suffix logic, vendor 804).
+ *   5. `newly_suggested` excludes IDs already in
  *      faz_gvl_selected_vendors; `already_selected` mirrors them.
- *   5. Read-only — calling /suggest never mutates
+ *   6. Read-only — calling /suggest never mutates
  *      faz_gvl_selected_vendors. Persistence remains the existing
  *      POST /selected route.
+ *   7. Zero matching cookies → empty arrays, not an error.
+ *   8. discovered=0 rows (manually-added cookies) are ignored — only
+ *      scanner-observed rows feed suggestions.
+ *
+ * Vendor IDs used as fixtures are real IAB GVL entries:
+ *   - 755 → Google Advertising Products (.googletagmanager.com)
+ *   - 804 → LinkedIn Ireland (.linkedin.com)
+ *   - 986 → TikTok Information Technologies UK (.tiktok.com)
  */
 
 import { type Page } from '@playwright/test';
@@ -46,14 +56,18 @@ function resetCookies(): void {
   );
 }
 
-function plantCookies(rows: Array<{ name: string; slug: string; domain: string }>): void {
+function plantCookies(
+  rows: Array<{ name: string; slug: string; domain: string }>,
+  discovered: 0 | 1 = 1,
+): void {
   if (rows.length === 0) return;
   // Hand-rolled multi-row insert via $wpdb->insert to keep the
-  // fixtures legible. discovered=1 is intentional: the suggest
+  // fixtures legible. `discovered` defaults to 1 because the suggest
   // helper restricts its domain SELECT to scanner-discovered rows
-  // (CodeRabbit PR #127 review), so the fixture must mirror what
-  // the live scanner would produce for the assertions to be
-  // meaningful.
+  // (CodeRabbit PR #127 review), so the common-case fixture must
+  // mirror what the live scanner would produce. Pass discovered=0 to
+  // simulate a manually-added cookie (the Cookies admin page default),
+  // which the helper must ignore — test 8 exercises that path.
   for (const r of rows) {
     const code = `global $wpdb; $wpdb->insert(
       $wpdb->prefix . 'faz_cookies',
@@ -63,7 +77,7 @@ function plantCookies(rows: Array<{ name: string; slug: string; domain: string }
         'domain'     => ${JSON.stringify(r.domain)},
         'category'   => 0,
         'type'       => 'http',
-        'discovered' => 1,
+        'discovered' => ${discovered},
       ),
       array('%s','%s','%s','%d','%s','%d')
     );`;
@@ -139,6 +153,8 @@ test.describe('GVL vendor auto-detect from cookies', () => {
     ]);
     const r = await suggest();
     expect(r.gvl_available).toBe(true);
+    // 755 = Google Advertising Products, 804 = LinkedIn Ireland,
+    // 986 = TikTok Information Technologies UK (real IAB GVL IDs).
     expect(r.vendor_ids).toEqual(expect.arrayContaining([755, 804, 986]));
     // Output is sorted unique.
     expect([...r.vendor_ids].sort((a, b) => a - b)).toEqual(r.vendor_ids);
@@ -199,30 +215,6 @@ test.describe('GVL vendor auto-detect from cookies', () => {
     expect(stored.trim()).toBe('"NOT_SET"');
   });
 
-  test('8. discovered=0 rows are ignored — only scanner-discovered cookies feed suggestions', async () => {
-    // Manually-added cookies (discovered=0, the default when the
-    // admin adds a row from the Cookies admin page) MUST NOT
-    // surface a vendor suggestion: the auto-detect feature is
-    // explicitly about what the SCANNER observed on the live site.
-    // CodeRabbit PR #127 review flagged this as the cookie schema's
-    // discovered column is the contract boundary between
-    // scanner-observed and admin-curated rows.
-    wpEval(`global $wpdb; $wpdb->insert(
-      $wpdb->prefix . 'faz_cookies',
-      array(
-        'name'       => 'manual_ga',
-        'slug'       => 'auto-detect-manual',
-        'domain'     => '.googletagmanager.com',
-        'category'   => 0,
-        'type'       => 'http',
-        'discovered' => 0,
-      ),
-      array('%s','%s','%s','%d','%s','%d')
-    );`);
-    const r = await suggest();
-    expect(r.vendor_ids, 'manually-added discovered=0 cookies leaked into the suggestion').toEqual([]);
-  });
-
   test('7. With zero matching cookies, response is empty arrays — not an error', async () => {
     plantCookies([
       { name: 'auto_noise', slug: 'auto-detect-noise', domain: '.example.org' },
@@ -232,5 +224,21 @@ test.describe('GVL vendor auto-detect from cookies', () => {
     expect(r.vendor_ids).toEqual([]);
     expect(r.already_selected).toEqual([]);
     expect(r.newly_suggested).toEqual([]);
+  });
+
+  test('8. discovered=0 rows are ignored — only scanner-discovered cookies feed suggestions', async () => {
+    // Manually-added cookies (discovered=0, the default when the
+    // admin adds a row from the Cookies admin page) MUST NOT
+    // surface a vendor suggestion: the auto-detect feature is
+    // explicitly about what the SCANNER observed on the live site.
+    // CodeRabbit PR #127 review flagged this as the cookie schema's
+    // discovered column is the contract boundary between
+    // scanner-observed and admin-curated rows.
+    plantCookies(
+      [{ name: 'manual_ga', slug: 'auto-detect-manual', domain: '.googletagmanager.com' }],
+      0,
+    );
+    const r = await suggest();
+    expect(r.vendor_ids, 'manually-added discovered=0 cookies leaked into the suggestion').toEqual([]);
   });
 });
