@@ -652,6 +652,15 @@ body[class*="faz-cookie-manager"] #wpbody-content {
 	background: var(--faz-bg-secondary);
 	color: var(--faz-text-secondary);
 }
+/* Compact variant for the inline "Detected" badge next to cookie-policy
+   service checkboxes. Colours/padding/radius come from .faz-badge +
+   .faz-badge-success; this only tightens the sizing. */
+.faz-svc-detected-badge {
+	padding: 1px 6px;
+	font-size: 10px;
+	letter-spacing: .02em;
+	text-transform: uppercase;
+}
 
 /* ── Dropdown ── */
 .faz-dropdown {

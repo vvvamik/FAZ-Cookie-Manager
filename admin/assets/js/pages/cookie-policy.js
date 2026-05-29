@@ -336,9 +336,14 @@
 				// "constructor" or "toString" can't false-positive.
 				if (Object.prototype.hasOwnProperty.call(detectedServiceIds, svc.id)) {
 					var badge = document.createElement('span');
-					badge.className = 'faz-svc-detected-badge';
+					// .faz-badge + .faz-badge-success supply padding, radius,
+					// font-weight and the correct design-token colours (no
+					// hardcoded hex). faz-svc-detected-badge stays as the test
+					// selector (cookie-policy-service-auto-detect.spec.ts) and
+					// carries the compact sizing override (see faz-admin.css).
+					badge.className = 'faz-badge faz-badge-success faz-svc-detected-badge';
 					badge.title = t( 'svcDetectedTooltip', 'The cookie scanner observed a tracking domain for this service on your site.' );
-					badge.style.cssText = 'margin-left:4px;padding:1px 6px;border-radius:8px;background:#dff5e1;color:#1d7d28;font-size:10px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;';
+					badge.style.cssText = 'margin-left:4px;';
 					badge.textContent = t( 'svcDetectedBadge', 'Detected' );
 					label.appendChild(badge);
 				}
@@ -440,7 +445,7 @@
 				var newly  = (resp && Array.isArray(resp.newly_suggested))  ? resp.newly_suggested  : [];
 				var already = (resp && Array.isArray(resp.already_selected)) ? resp.already_selected : [];
 				if (newly.length === 0 && already.length === 0) {
-					setAutoDetectStatus(t( 'svcAutoDetectNoMatch', 'No matching services found among scanned cookies.' ), 'ok');
+					setAutoDetectStatus(t( 'svcAutoDetectNoMatch', 'No matching services found among scanned cookies.' ), '');
 					return;
 				}
 				// Nothing new to add but the detected services are already
@@ -510,25 +515,32 @@
 			api('GET', 'settings').catch(function (err) { setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + err.message, 'error'); return null; }),
 			api('GET', 'detected-services').catch(function () { return { service_ids: [] }; })
 		]).then(function (results) {
-			var settings = results[0];
-			var detected = results[1] && Array.isArray(results[1].service_ids) ? results[1].service_ids : [];
-			// Re-render with badges if the scanner found anything. Empty
-			// detected list: skip the rerender (badges identical to first
-			// pass — no point re-painting the DOM).
-			if (detected.length > 0) {
-				detectedServiceIds = Object.create(null);
-				for (var i = 0; i < detected.length; i++) {
-					detectedServiceIds[detected[i]] = true;
+			try {
+				var settings = results[0];
+				var detected = results[1] && Array.isArray(results[1].service_ids) ? results[1].service_ids : [];
+				// Re-render with badges if the scanner found anything. Empty
+				// detected list: skip the rerender (badges identical to first
+				// pass — no point re-painting the DOM).
+				if (detected.length > 0) {
+					detectedServiceIds = Object.create(null);
+					for (var i = 0; i < detected.length; i++) {
+						detectedServiceIds[detected[i]] = true;
+					}
+					renderServicesList();
 				}
-				renderServicesList();
+				// writeForm runs LAST so checkbox state from settings overrides
+				// any default in the freshly-rendered DOM. Preserves the
+				// hydration-race guard: writeForm(settings) must complete
+				// before the finally block re-enables the button.
+				if (settings) { writeForm(settings); }
+			} finally {
+				// Hydration done — Auto-detect is safe to use now (writeForm
+				// has already applied the saved selection, so subsequent
+				// auto-detect ticks can't be overwritten by a late hydration).
+				// In finally so a synchronous throw in renderServicesList()/
+				// writeForm() can never leave the button permanently disabled.
+				if (autoDetectBtn) { autoDetectBtn.disabled = false; }
 			}
-			// writeForm runs LAST so checkbox state from settings overrides
-			// any default in the freshly-rendered DOM.
-			if (settings) { writeForm(settings); }
-			// Hydration done — Auto-detect is safe to use now (writeForm
-			// has already applied the saved selection, so subsequent
-			// auto-detect ticks can't be overwritten by a late hydration).
-			if (autoDetectBtn) { autoDetectBtn.disabled = false; }
 		});
 
 		document.getElementById('faz-cookie-policy-form').addEventListener('submit', function (e) {

@@ -28,6 +28,24 @@
 	// previous request that resolves AFTER a newer click cannot push
 	// stale data into selectedVendors / status / notifications.
 	var autoDetectRequestId = 0;
+	// Closure-level timer handle for the auto-detect status auto-clear.
+	// Cleared at the start of every setAutoDetectStatus() call so a stale
+	// timer scheduled by a previous 'ok'/'success' message can never blank a
+	// newer scanning/error message painted afterwards. Mirrors
+	// cookie-policy.js setAutoDetectStatus().
+	var autoDetectStatusTimer = null;
+	function setAutoDetectStatus(msg, kind) {
+		var el = document.getElementById('faz-gvl-auto-detect-status');
+		if (!el) { return; }
+		if (autoDetectStatusTimer) { clearTimeout(autoDetectStatusTimer); autoDetectStatusTimer = null; }
+		el.textContent = msg || '';
+		el.style.color = kind === 'error' ? '#c4302b' : (kind === 'ok' || kind === 'success' ? '#1d7d28' : 'var(--faz-text-secondary, #555)');
+		// Auto-clear ONLY the success message after 3s. 'error' (F007) and
+		// scanning ('') states stay persistent — no timer.
+		if (msg && (kind === 'ok' || kind === 'success')) {
+			autoDetectStatusTimer = setTimeout(function () { el.textContent = ''; autoDetectStatusTimer = null; }, 3000);
+		}
+	}
 
 	FAZ.ready(function () {
 		if (!document.getElementById('faz-gvl')) return;
@@ -354,11 +372,12 @@
 		// invocation. Matches the previewRequestId pattern used in
 		// other admin pages.
 		var requestId = ++autoDetectRequestId;
-		var status = document.getElementById('faz-gvl-auto-detect-status');
 		// Read-only scan, not a save — pass a scan-specific spinner label so
 		// the button doesn't misleadingly read "Saving..." during detection.
 		FAZ.btnLoading(btn, true, __('gvl.autoDetectScanning', 'Scanning cookie inventory…'));
-		if (status) { status.textContent = ''; }
+		// Scanning state: clear via the helper (no timer — stays until the
+		// next status write replaces it).
+		setAutoDetectStatus('', '');
 
 		FAZ.get('gvl/suggest').then(function (data) {
 			if (requestId !== autoDetectRequestId) { return; }
@@ -370,7 +389,7 @@
 				// persistent status span so a faded toast still leaves a
 				// trace — parity with cookie-policy.js (F007).
 				var noGvlMsg = __('gvl.autoDetectNoGvl', 'Update the Global Vendor List first, then try Auto-detect again.');
-				if (status) { status.textContent = noGvlMsg; }
+				setAutoDetectStatus(noGvlMsg, 'warning');
 				FAZ.notify(noGvlMsg, 'warning');
 				return;
 			}
@@ -382,7 +401,7 @@
 				// Soft info string in the persistent span instead of going
 				// blank — keeps a trace after the toast fades (F007).
 				var noMatchMsg = __('gvl.autoDetectNoMatch', 'No matching ad-tech vendors were found in the scanned cookies. Run the cookie scanner first if you have not.');
-				if (status) { status.textContent = noMatchMsg; }
+				setAutoDetectStatus(noMatchMsg, 'info');
 				FAZ.notify(noMatchMsg, 'info');
 				return;
 			}
@@ -433,15 +452,18 @@
 					.replace('%d', String(added.length))
 					.replace('%d', String(already.length));
 			}
-			if (status) { status.textContent = msg; }
+			// Success: route through the helper so the message auto-clears
+			// after 3s (the only kind that gets a timer).
+			setAutoDetectStatus(msg, 'ok');
 			FAZ.notify(msg, 'success');
 		}).catch(function () {
 			if (requestId !== autoDetectRequestId) { return; }
 			FAZ.btnLoading(btn, false);
 			// Persist the failure in the status span too — the toast
 			// auto-dismisses but the admin still needs a trace (F007).
+			// 'error' kind => no auto-clear timer, stays visible.
 			var failedMsg = __('gvl.autoDetectFailed', 'Auto-detect failed. Check the cookie scanner and try again.');
-			if (status) { status.textContent = failedMsg; }
+			setAutoDetectStatus(failedMsg, 'error');
 			FAZ.notify(failedMsg, 'error');
 		});
 	}
