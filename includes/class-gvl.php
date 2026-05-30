@@ -330,7 +330,12 @@ class Gvl {
 	 */
 	public function suggest_vendor_ids_from_scanned_cookies() {
 		global $wpdb;
-		$table = $wpdb->prefix . 'faz_cookies';
+		// Whitelist-sanitise the table identifier. It is server-derived from the
+		// WP prefix (no user input), but stripping anything outside [A-Za-z0-9_]
+		// makes the interpolated query below provably injection-safe in code,
+		// not just by convention. ($wpdb->prepare()'s %i identifier placeholder
+		// would be cleaner but needs WP 6.2+; this plugin keeps Requires at least 5.0.)
+		$table = preg_replace( '/[^A-Za-z0-9_]/', '', $wpdb->prefix . 'faz_cookies' );
 		// Safety: bail if the schema isn't installed yet (fresh install before
 		// activation hooks fire, or test harness that drops tables between runs).
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
