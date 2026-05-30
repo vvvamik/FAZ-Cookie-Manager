@@ -550,7 +550,7 @@ class Cookie_Policy_Api {
 		// Same restriction as Gvl::suggest_vendor_ids_from_scanned_cookies()
 		// (CodeRabbit PR #127 review hardened this rule).
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$domains = (array) $wpdb->get_col( "SELECT DISTINCT domain FROM `{$table}` WHERE domain <> '' AND discovered = 1" );
+		$domains = (array) $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT domain FROM `{$table}` WHERE domain <> %s AND discovered = %d", '', 1 ) );
 		if ( empty( $domains ) ) {
 			return array();
 		}
@@ -622,7 +622,7 @@ class Cookie_Policy_Api {
 			return false;
 		}
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$table}` WHERE discovered = 1" );
+		$count = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM `{$table}` WHERE discovered = %d", 1 ) );
 		return $count > 0;
 	}
 

@@ -353,7 +353,7 @@ class Gvl {
 		// PR #127 review (2026-05-27) flagged the broader query as a
 		// source of potential false positives — confirmed.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$domains = (array) $wpdb->get_col( "SELECT DISTINCT domain FROM `{$table}` WHERE domain <> '' AND discovered = 1" );
+		$domains = (array) $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT domain FROM `{$table}` WHERE domain <> %s AND discovered = %d", '', 1 ) );
 		if ( empty( $domains ) ) {
 			return array();
 		}
