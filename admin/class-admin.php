@@ -589,6 +589,18 @@ class Admin {
 						'enabled'                  => __( 'Cookie banner enabled.', 'faz-cookie-manager' ),
 						'disabled'                 => __( 'Cookie banner disabled.', 'faz-cookie-manager' ),
 						'toggleFailed'             => __( 'Failed to update banner status.', 'faz-cookie-manager' ),
+						// Colour-contrast checker (Colours tab, WCAG SC 1.4.3).
+						'contrastTitle'            => __( 'Accessibility: low colour contrast', 'faz-cookie-manager' ),
+						'contrastIntro'            => __( 'These colour pairs fall below the WCAG AA 4.5:1 minimum and may be hard to read:', 'faz-cookie-manager' ),
+						'cTitle'                   => __( 'Title vs banner background', 'faz-cookie-manager' ),
+						'cDesc'                    => __( 'Description vs banner background', 'faz-cookie-manager' ),
+						'cLink'                    => __( 'Link vs banner background', 'faz-cookie-manager' ),
+						'cAccept'                  => __( 'Accept button text vs its background', 'faz-cookie-manager' ),
+						'cReject'                  => __( 'Reject button text vs its background', 'faz-cookie-manager' ),
+						'cSettings'                => __( 'Settings button text vs its background', 'faz-cookie-manager' ),
+						'cSave'                    => __( 'Save button text vs its background', 'faz-cookie-manager' ),
+						'cCatLabel'                => __( 'Category label vs banner background', 'faz-cookie-manager' ),
+						'cDoNotSell'               => __( 'Do Not Sell text vs banner background', 'faz-cookie-manager' ),
 					),
 					// Settings page.
 					'settings'                 => array(

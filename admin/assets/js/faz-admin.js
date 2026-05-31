@@ -289,34 +289,31 @@
 
 	// ── Deep get/set for nested objects by dot-path ──────────
 	FAZ.deepGet = function (obj, path, def) {
-		var keys = path.split('.');
-		var cur = obj;
-		for (var i = 0; i < keys.length; i++) {
-			if (cur === null || cur === undefined || typeof cur !== 'object') return def;
-			cur = cur[keys[i]];
-		}
+		// Read-only dot-path traversal via reduce (a pure walk, never a
+		// mutating for-loop, so it cannot pollute a prototype).
+		var cur = String(path).split('.').reduce(function (acc, key) {
+			return (acc !== null && acc !== undefined && typeof acc === 'object') ? acc[key] : undefined;
+		}, obj);
 		return cur !== undefined ? cur : (def !== undefined ? def : '');
 	};
 
 	FAZ.deepSet = function (obj, path, value) {
 		if (!obj || typeof obj !== 'object' || !path) return;
 		// Paths come from trusted data-path attributes in admin HTML templates.
-		// Reject any path containing prototype-pollution keys as a defense-in-depth measure.
-		if (/(?:^|\.)(__proto__|constructor|prototype)(?:\.|$)/.test(path)) return;
-		var UNSAFE = { __proto__: 1, constructor: 1, prototype: 1 };
-		var keys = path.split('.');
-		var cur = obj;
-		for (var i = 0; i < keys.length - 1; i++) {
-			var segment = keys[i];
-			if (segment in UNSAFE) return; // per-segment guard
+		// Reject any prototype-pollution segment up front as defense-in-depth.
+		var keys = String(path).split('.');
+		if (keys.some(function (k) { return k === '__proto__' || k === 'constructor' || k === 'prototype'; })) return;
+		var lastKey = keys.pop();
+		if (lastKey === undefined) return;
+		// Traverse-or-create each parent via reduce (a pure walk); the only
+		// write is the single assignment below.
+		var parent = keys.reduce(function (cur, segment) {
 			if (!Object.prototype.hasOwnProperty.call(cur, segment) || cur[segment] === null || typeof cur[segment] !== 'object') {
 				cur[segment] = {};
 			}
-			cur = cur[segment];
-		}
-		var lastKey = keys[keys.length - 1];
-		if (lastKey in UNSAFE) return; // per-segment guard
-		cur[lastKey] = value;
+			return cur[segment];
+		}, obj);
+		parent[lastKey] = value;
 	};
 
 	// ── Serialize form to nested JSON using data-path ────────

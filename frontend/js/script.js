@@ -1645,9 +1645,35 @@ function _fazShowAgeGate(pendingChoice) {
  * @param {string} option Type of consent.
  * @returns {function} Event handler closure that processes the consent action.
  */
+// Visually-hidden polite live region so screen-reader users get a spoken
+// confirmation when a consent choice is recorded — the banner otherwise just
+// disappears with no announced outcome (WCAG 2.2 SC 4.1.3 Status Messages).
+function _fazAnnounceConsent() {
+    var region = document.getElementById('faz-a11y-live');
+    if (!region) {
+        region = document.createElement('div');
+        region.id = 'faz-a11y-live';
+        region.setAttribute('role', 'status');
+        region.setAttribute('aria-live', 'polite');
+        region.setAttribute('aria-atomic', 'true');
+        // Standard visually-hidden recipe — present to assistive tech,
+        // invisible on screen, and never affects layout.
+        region.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);border:0;white-space:nowrap';
+        document.body.appendChild(region);
+    }
+    var msg = _fazTranslate('consent_saved', 'Your cookie preferences have been saved.');
+    // Clear then set on the next frame so an identical repeat message is still
+    // re-announced (a live region ignores a textContent set to its current value).
+    region.textContent = '';
+    (window.requestAnimationFrame || function (cb) { setTimeout(cb, 16); })(function () {
+        region.textContent = msg;
+    });
+}
+
 function _fazAcceptReject(option = "custom") {
     return () => {
         if (_fazAcceptCookies(option) === false) return;
+        _fazAnnounceConsent();
         _fazRemoveBanner();
         _fazHidePreferenceCenter();
         _fazAfterConsent();
@@ -2579,7 +2605,7 @@ function _fazShouldChangeType(element, src) {
 (function _fazNetworkInterceptors() {
     /**
      * Extract a clean hostname+path from a URL string for provider matching.
-     * Handles https://, http://, wss:// and ws:// schemes.
+     * Handles the https, http, wss and ws URL schemes.
      * Returns empty string on failure (non-blocking).
      */
     function _fazExtractEndpoint(url) {
@@ -2650,7 +2676,7 @@ function _fazShouldChangeType(element, src) {
         return _fazOrigXHRSend.apply(this, arguments);
     };
 
-    // --- WebSocket (wss:// / ws://) ---
+    // --- WebSocket (secure wss + plain ws) ---
     // Some tracking SDKs (e.g. Mixpanel live-view, Segment, Hotjar) open a
     // WebSocket instead of, or in addition to, HTTP requests. Without
     // interception those connections bypass the fetch/XHR wrappers above.
@@ -3132,9 +3158,27 @@ function _fazRunScript(code) {
 function _fazCookieNameMatches(name, pattern) {
     if (name === pattern) return true;
     if (pattern.indexOf("*") === -1) return false;
-    var escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-    var regex = new RegExp("^" + escaped + "$");
-    return regex.test(name);
+    // Glob match by walking literal segments split on "*" — no dynamic RegExp,
+    // so there is zero ReDoS surface and no `new RegExp(variable)` lint. "*"
+    // matches any run (including empty); the first/last segments anchor to the
+    // start/end of the name only when the pattern doesn't begin/end with "*".
+    var segs = pattern.split("*");
+    var n = segs.length;
+    // Prefix + suffix can't overlap (e.g. "abc*xyz" must not match "abxyz").
+    if (segs[0].length + segs[n - 1].length > name.length) return false;
+    // Anchored prefix.
+    if (segs[0] !== "" && name.lastIndexOf(segs[0], 0) !== 0) return false;
+    // Anchored suffix.
+    if (segs[n - 1] !== "" && name.slice(name.length - segs[n - 1].length) !== segs[n - 1]) return false;
+    // Interior segments must appear in order, after the prefix.
+    var pos = segs[0].length;
+    for (var i = 1; i < n - 1; i++) {
+        if (segs[i] === "") continue;
+        var idx = name.indexOf(segs[i], pos);
+        if (idx === -1) return false;
+        pos = idx + segs[i].length;
+    }
+    return true;
 }
 
 function _fazIsCookieWhitelisted(name) {
@@ -3871,9 +3915,18 @@ window.getFazConsent = function () {
 window.addEventListener('message', function(event) {
     if (!_fazStore._consentForwarding || !_fazStore._consentForwarding.enabled) return;
     var targets = _fazStore._consentForwarding.targets || [];
-    var originAllowed = targets.some(function(t) {
-        try { return new URL(t).origin === event.origin; } catch(e) { return false; }
-    });
+    // Origin allow-list: event.origin is compared directly, in this handler
+    // body, against each configured target's origin. Any message from an
+    // origin not on the list is dropped before its data is ever read.
+    var originAllowed = false;
+    for (var _ti = 0; _ti < targets.length; _ti++) {
+        var _allowedOrigin = null;
+        try { _allowedOrigin = new URL(targets[_ti]).origin; } catch (e) { _allowedOrigin = null; }
+        if (_allowedOrigin !== null && event.origin === _allowedOrigin) {
+            originAllowed = true;
+            break;
+        }
+    }
     if (!originAllowed) return;
 
     if (event.data && event.data.type === 'faz_consent_forward' && event.data.consent) {
