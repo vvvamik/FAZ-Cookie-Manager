@@ -500,6 +500,28 @@ defined( 'ABSPATH' ) || exit;
 		</div>
 
 		<div class="faz-card">
+			<div class="faz-card-header"><h3><?php esc_html_e( 'Preference Center Colours', 'faz-cookie-manager' ); ?></h3></div>
+			<div class="faz-card-body">
+				<div class="faz-grid faz-grid-3">
+					<div class="faz-form-group">
+						<label><?php esc_html_e( 'Show More / Show Less Link', 'faz-cookie-manager' ); ?></label>
+						<div class="faz-input-color-wrap">
+							<input type="color" id="faz-b-showdesc-color">
+							<input type="text" class="faz-input faz-input-sm" id="faz-b-showdesc-color-hex" style="width:90px;">
+						</div>
+					</div>
+					<div class="faz-form-group">
+						<label><?php esc_html_e( 'Read More / Cookie Policy Link', 'faz-cookie-manager' ); ?></label>
+						<div class="faz-input-color-wrap">
+							<input type="color" id="faz-b-readmore-color">
+							<input type="text" class="faz-input faz-input-sm" id="faz-b-readmore-color-hex" style="width:90px;">
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="faz-card">
 			<div class="faz-card-header"><h3><?php esc_html_e( 'Revisit Widget', 'faz-cookie-manager' ); ?></h3></div>
 			<div class="faz-card-body">
 				<div class="faz-grid faz-grid-3">

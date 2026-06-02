@@ -1036,6 +1036,15 @@
 		var linkStyles = (ao.elements && ao.elements.manualLinks && ao.elements.manualLinks.styles) || {};
 		setColor('faz-b-link-color', linkStyles.color || '#1863DC');
 
+		// Preference center: Show More/Less link + Read More/Cookie Policy link colours.
+		var aoPC = (ao.elements && ao.elements.preferenceCenter && ao.elements.preferenceCenter.elements) || {};
+		var showMoreStyles = (aoPC.showMore && aoPC.showMore.styles) || {};
+		setColor('faz-b-showdesc-color', showMoreStyles.color || '#1863DC');
+		var readMoreStyles = (config.notice && config.notice.elements && config.notice.elements.buttons
+			&& config.notice.elements.buttons.elements && config.notice.elements.buttons.elements.readMore
+			&& config.notice.elements.buttons.elements.readMore.styles) || {};
+		setColor('faz-b-readmore-color', readMoreStyles.color || '#1863DC');
+
 		// Colours - buttons
 		var buttons = (config.notice && config.notice.elements && config.notice.elements.buttons && config.notice.elements.buttons.elements) || {};
 		populateButtonColors('accept', buttons.accept);
@@ -1292,6 +1301,9 @@
 		var presetAo = preset.accessibilityOverrides || {};
 		var presetLink = (presetAo.elements && presetAo.elements.manualLinks && presetAo.elements.manualLinks.styles) || {};
 		setColor('faz-b-link-color', presetLink.color || '#1863DC');
+		var presetPC = (presetAo.elements && presetAo.elements.preferenceCenter && presetAo.elements.preferenceCenter.elements) || {};
+		setColor('faz-b-showdesc-color', (presetPC.showMore && presetPC.showMore.styles && presetPC.showMore.styles.color) || '#1863DC');
+		setColor('faz-b-readmore-color', (ne.buttons && ne.buttons.elements && ne.buttons.elements.readMore && ne.buttons.elements.readMore.styles && ne.buttons.elements.readMore.styles.color) || '#1863DC');
 
 		var btns = (ne.buttons && ne.buttons.elements) || {};
 		populateButtonColors('accept', btns.accept);
@@ -1642,6 +1654,16 @@
 
 		ensureObj(props, 'config.accessibilityOverrides.elements.manualLinks.styles');
 		props.config.accessibilityOverrides.elements.manualLinks.styles.color = getColor('faz-b-link-color');
+
+		// Preference center Show More/Less link colour (applied to both showMore and
+		// the symmetric showLess so the pair always matches) + Read More/Cookie
+		// Policy link colour.
+		ensureObj(props, 'config.accessibilityOverrides.elements.preferenceCenter.elements.showMore.styles');
+		props.config.accessibilityOverrides.elements.preferenceCenter.elements.showMore.styles.color = getColor('faz-b-showdesc-color');
+		ensureObj(props, 'config.accessibilityOverrides.elements.preferenceCenter.elements.showLess.styles');
+		props.config.accessibilityOverrides.elements.preferenceCenter.elements.showLess.styles.color = getColor('faz-b-showdesc-color');
+		ensureObj(props, 'config.notice.elements.buttons.elements.readMore.styles');
+		props.config.notice.elements.buttons.elements.readMore.styles.color = getColor('faz-b-readmore-color');
 
 		// Colours + status - buttons
 		ensureObj(props, 'config.notice.elements.buttons.elements');
