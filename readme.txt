@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.16.2
+Stable tag: 1.17.0
 Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -324,6 +324,12 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.17.0 =
+* Feature: Auto-detect from the cookie scanner. The IAB TCF Global Vendor List page and the Cookie Policy "Third-party services" tab each gain an "Auto-detect from cookie scan" button that pre-ticks the vendors / services whose tracking domains the scanner has actually observed on the site. Matching uses a bundled domain->vendor / domain->service map with a dot-prefix suffix guard (`.notgoogle.com` cannot match `google.com`); only scanner-discovered rows (`discovered = 1`) feed suggestions, never manually-added cookies. The REST endpoints (`gvl/suggest`, `cookie-policy/suggest-services`, `cookie-policy/detected-services`) are gated behind a `manage_options` capability check and are read-only (the write endpoints alongside them additionally verify a nonce).
+* Accessibility (WCAG 2.2 AA): recording a consent choice now announces "preferences saved" through a visually-hidden `aria-live` status region (SC 4.1.3); banner slide-in animations respect `prefers-reduced-motion`; the close-button image is marked decorative (`alt=""`) since the button already carries a localized `aria-label`; and the Banner > Colours admin tab gained a live colour-contrast checker that warns (non-blocking) when any text/background pair drops below the 4.5:1 AA minimum.
+* Hardening: the scanned-cookie suggest/detected pair derives `scan_available` and the matched service/vendor list from a single `SELECT` (closes a TOCTOU where a concurrent delete could make the two disagree); `SHOW TABLES LIKE` existence probes wrap the table name in `$wpdb->esc_like()`; the cookie-name wildcard matcher was reimplemented without a dynamic `RegExp` (zero ReDoS surface); cross-domain consent forwarding validates `event.origin` against an explicit allow-list before reading message data; the `deepGet` / `deepSet` / `setPathValue` dot-path helpers were refactored to prototype-pollution-safe forms; and CI pins `@wordpress/env` and Plugin Check to fixed versions for reproducible runs.
+* i18n: refreshed `faz-cookie-manager.pot` and the bundled `.po` / `.mo` catalogs (cs_CZ, de_DE, fr_FR, hr_HR, it_IT, nl_NL) with the new admin strings.
 
 = 1.16.2 =
 * Fix: Cookie Policy generator `[faz_cookie_policy_complete]` — Gooloo feedback round. (1) `{{COOKIE_POLICY_URL}}` no longer leaks `?preview_id=&preview_nonce=` query strings from the WordPress preview flow into the public policy text. (2) Cookie inventory now renders as collapsible HTML5 accordion (`<details>/<summary>`) with a real `<table>` per category — previously a flat `<dl>` produced a 700+-line wall of definition pairs. (3) Footer disclaimer is now admin-configurable (toggle + custom text) and wrapped in `<div>` instead of `<footer>`. (4) Empty list-item rows like `**Register / USt-ID:**` are removed when the corresponding placeholder is blank. (5) German DPO label dropped the non-standard "(DSB)" acronym; Italian, French, Spanish and Portuguese GDPR scaffolds dropped the redundant "(DPO)" suffix; "Supervisory authority" section with the European Data Protection Board reference removed from all six GDPR templates. (6) `Google Ads` and `Criteo` added to the third-party services allowlist (previously missing). (7) WordPress-internal cookies (`wp-settings-*`, `wordpress_logged_in_*`, the dedicated "wordpress-internal" admin category) are now excluded from the public policy, matching the same filter already applied to the consent banner.

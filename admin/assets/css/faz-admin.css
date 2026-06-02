@@ -652,6 +652,15 @@ body[class*="faz-cookie-manager"] #wpbody-content {
 	background: var(--faz-bg-secondary);
 	color: var(--faz-text-secondary);
 }
+/* Compact variant for the inline "Detected" badge next to cookie-policy
+   service checkboxes. Colours/padding/radius come from .faz-badge +
+   .faz-badge-success; this only tightens the sizing. */
+.faz-svc-detected-badge {
+	padding: 1px 6px;
+	font-size: 10px;
+	letter-spacing: .02em;
+	text-transform: uppercase;
+}
 
 /* ── Dropdown ── */
 .faz-dropdown {
@@ -822,6 +831,10 @@ body[class*="faz-cookie-manager"] #wpbody-content {
 }
 .faz-toast-info {
 	background: var(--faz-primary);
+	color: #fff;
+}
+.faz-toast-warning {
+	background: var(--faz-warning);
 	color: #fff;
 }
 @keyframes fazToastIn {
@@ -1364,7 +1377,7 @@ body[class*="faz-cookie-manager"] #wpbody-content {
 	font-weight: 700;
 	transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-.faz-btn-secondary:hover {
+.faz-btn-secondary:hover:not(:disabled) {
 	background: var(--faz-primary-soft);
 	border-color: rgba(var(--faz-primary-rgb), 0.25);
 	color: var(--faz-primary);

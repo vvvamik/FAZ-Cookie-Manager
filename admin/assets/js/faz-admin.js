@@ -232,6 +232,11 @@
 		if (!toastContainer) {
 			toastContainer = document.createElement('div');
 			toastContainer.className = 'faz-toast-container';
+			// Polite live region so screen readers announce dynamically
+			// injected toasts (e.g. auto-detect results) — WCAG 2.2 SC 4.1.3.
+			toastContainer.setAttribute('role', 'status');
+			toastContainer.setAttribute('aria-live', 'polite');
+			toastContainer.setAttribute('aria-atomic', 'true');
 			document.body.appendChild(toastContainer);
 		}
 		var toast = document.createElement('div');
@@ -289,34 +294,31 @@
 
 	// ── Deep get/set for nested objects by dot-path ──────────
 	FAZ.deepGet = function (obj, path, def) {
-		var keys = path.split('.');
-		var cur = obj;
-		for (var i = 0; i < keys.length; i++) {
-			if (cur === null || cur === undefined || typeof cur !== 'object') return def;
-			cur = cur[keys[i]];
-		}
+		// Read-only dot-path traversal via reduce (a pure walk, never a
+		// mutating for-loop, so it cannot pollute a prototype).
+		var cur = String(path).split('.').reduce(function (acc, key) {
+			return (acc !== null && acc !== undefined && typeof acc === 'object') ? acc[key] : undefined;
+		}, obj);
 		return cur !== undefined ? cur : (def !== undefined ? def : '');
 	};
 
 	FAZ.deepSet = function (obj, path, value) {
 		if (!obj || typeof obj !== 'object' || !path) return;
 		// Paths come from trusted data-path attributes in admin HTML templates.
-		// Reject any path containing prototype-pollution keys as a defense-in-depth measure.
-		if (/(?:^|\.)(__proto__|constructor|prototype)(?:\.|$)/.test(path)) return;
-		var UNSAFE = { __proto__: 1, constructor: 1, prototype: 1 };
-		var keys = path.split('.');
-		var cur = obj;
-		for (var i = 0; i < keys.length - 1; i++) {
-			var segment = keys[i];
-			if (segment in UNSAFE) return; // per-segment guard
+		// Reject any prototype-pollution segment up front as defense-in-depth.
+		var keys = String(path).split('.');
+		if (keys.some(function (k) { return k === '__proto__' || k === 'constructor' || k === 'prototype'; })) return;
+		var lastKey = keys.pop();
+		if (lastKey === undefined) return;
+		// Traverse-or-create each parent via reduce (a pure walk); the only
+		// write is the single assignment below.
+		var parent = keys.reduce(function (cur, segment) {
 			if (!Object.prototype.hasOwnProperty.call(cur, segment) || cur[segment] === null || typeof cur[segment] !== 'object') {
 				cur[segment] = {};
 			}
-			cur = cur[segment];
-		}
-		var lastKey = keys[keys.length - 1];
-		if (lastKey in UNSAFE) return; // per-segment guard
-		cur[lastKey] = value;
+			return cur[segment];
+		}, obj);
+		parent[lastKey] = value;
 	};
 
 	// ── Serialize form to nested JSON using data-path ────────
@@ -361,18 +363,31 @@
 	};
 
 	// ── Loading states ───────────────────────────────────────
-	FAZ.btnLoading = function (btn, loading) {
+	FAZ.btnLoading = function (btn, loading, loadingLabel) {
 		if (!btn) return;
 		if (loading) {
-			btn.dataset.origText = btn.textContent;
+			// Idempotency: only snapshot the original label the first time we
+			// enter the loading state. A second btnLoading(btn, true) call
+			// (e.g. a double-click or overlapping request) would otherwise
+			// capture the spinner-replaced text and lose the real label.
+			if (btn.getAttribute('aria-busy') !== 'true') {
+				btn.dataset.origText = btn.textContent;
+			}
 			btn.disabled = true;
+			btn.setAttribute('aria-busy', 'true');
 			var spinner = document.createElement('span');
 			spinner.className = 'faz-spinner';
 			btn.textContent = '';
 			btn.appendChild(spinner);
-			btn.appendChild(document.createTextNode(' Saving...'));
+			// Default label is "Saving…"; callers performing a non-save
+			// operation (e.g. a read-only scan) pass their own label so the
+			// spinner copy matches the action. The no-label default is sourced
+			// from a localized i18n key when present, falling back to English.
+			var lbl = loadingLabel || (window.fazConfig && window.fazConfig.i18n && window.fazConfig.i18n.saving) || 'Saving…';
+			btn.appendChild(document.createTextNode(' ' + lbl));
 		} else {
 			btn.disabled = false;
+			btn.removeAttribute('aria-busy');
 			btn.textContent = btn.dataset.origText || 'Save';
 		}
 	};

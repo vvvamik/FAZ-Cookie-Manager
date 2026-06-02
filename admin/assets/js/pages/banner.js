@@ -8,13 +8,13 @@
 
 	// i18n helper — looks up fazConfig.i18n.<key> with dot-notation, falls back to provided string.
 	function __(key, fallback) {
-		var parts = key.split('.');
 		var obj = (window.fazConfig && window.fazConfig.i18n) || {};
-		for (var i = 0; i < parts.length; i++) {
-			if (!obj || typeof obj !== 'object') { return fallback; }
-			obj = obj[parts[i]];
-		}
-		return typeof obj === 'string' ? obj : fallback;
+		// Read-only dot-path lookup via reduce (not a mutating for-loop) — a
+		// pure traversal that returns the localized string or the fallback.
+		var val = String(key).split('.').reduce(function (acc, part) {
+			return (acc && typeof acc === 'object') ? acc[part] : undefined;
+		}, obj);
+		return typeof val === 'string' ? val : fallback;
 	}
 
 	// Banner the page is currently editing. Read from the ?banner_id= query
@@ -39,6 +39,106 @@
 	var DEFAULT_PREVIEW_FRAME_HEIGHT = 280;
 	var MIN_PREVIEW_FRAME_HEIGHT = 72;
 	var MAX_PREVIEW_FRAME_HEIGHT = 640;
+
+	// ── Colour-contrast checker (WCAG AA) — hoisted to module scope so
+	// loadBanner()'s on-load check (outside FAZ.ready) can reach it; the
+	// in-FAZ.ready colour-change handlers call it too. Self-contained:
+	// only dependency is the module-level __() i18n helper.
+	var FAZ_CONTRAST_PAIRS = [
+		{ fg: 'faz-b-title-color',       bg: 'faz-b-notice-bg',       min: 4.5, label: __('banner.cTitle', 'Title vs banner background') },
+		{ fg: 'faz-b-desc-color',        bg: 'faz-b-notice-bg',       min: 4.5, label: __('banner.cDesc', 'Description vs banner background') },
+		{ fg: 'faz-b-link-color',        bg: 'faz-b-notice-bg',       min: 4.5, label: __('banner.cLink', 'Link vs banner background') },
+		{ fg: 'faz-b-accept-text',       bg: 'faz-b-accept-bg',       min: 4.5, label: __('banner.cAccept', 'Accept button text vs its background') },
+		{ fg: 'faz-b-reject-text',       bg: 'faz-b-reject-bg',       min: 4.5, label: __('banner.cReject', 'Reject button text vs its background') },
+		{ fg: 'faz-b-settings-text',     bg: 'faz-b-settings-bg',      min: 4.5, label: __('banner.cSettings', 'Settings button text vs its background'), fallbackBg: 'faz-b-notice-bg' },
+		{ fg: 'faz-b-catprev-save-text', bg: 'faz-b-catprev-save-bg',  min: 4.5, label: __('banner.cSave', 'Save button text vs its background') },
+		{ fg: 'faz-b-catprev-label',     bg: 'faz-b-notice-bg',        min: 4.5, label: __('banner.cCatLabel', 'Category label vs banner background') },
+		{ fg: 'faz-b-donotsell-text',    bg: 'faz-b-notice-bg',        min: 4.5, label: __('banner.cDoNotSell', 'Do Not Sell text vs banner background') }
+	];
+	function fazReadColor(id) {
+		// The -hex text input is the canonical value (can hold "transparent"
+		// or any string); fall back to the <input type=color> swatch.
+		var hex = document.getElementById(id + '-hex');
+		var col = document.getElementById(id);
+		var v = (hex && hex.value) || (col && col.value) || '';
+		return String(v).trim().toLowerCase();
+	}
+	function fazHexToRgb(hex) {
+		if (!/^#?[0-9a-f]{6}$/i.test(hex)) return null;
+		hex = hex.replace('#', '');
+		return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+	}
+	function fazRelLuminance(rgb) {
+		var a = rgb.map(function (v) {
+			v /= 255;
+			return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+		});
+		return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+	}
+	function fazContrastRatio(fg, bg) {
+		var l1 = fazRelLuminance(fg), l2 = fazRelLuminance(bg);
+		return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+	}
+	function fazResolveBg(pair) {
+		var v = fazReadColor(pair.bg);
+		if ((v === 'transparent' || v === '') && pair.fallbackBg) v = fazReadColor(pair.fallbackBg);
+		// A transparent banner sits on the page, which we can't read here —
+		// assume white, the overwhelmingly common page background.
+		if (v === 'transparent' || v === '') v = '#ffffff';
+		return fazHexToRgb(v);
+	}
+	function fazCheckContrast() {
+		var panel = document.getElementById('tab-colours');
+		if (!panel) return;
+		var box = document.getElementById('faz-contrast-warnings');
+		if (!box) {
+			box = document.createElement('div');
+			box.id = 'faz-contrast-warnings';
+			box.setAttribute('role', 'status');
+			box.setAttribute('aria-live', 'polite');
+			box.style.margin = '0 0 16px';
+			panel.insertBefore(box, panel.firstChild);
+		}
+		var issues = [];
+		FAZ_CONTRAST_PAIRS.forEach(function (pair) {
+			var fg = fazHexToRgb(fazReadColor(pair.fg));
+			var bg = fazResolveBg(pair);
+			if (!fg || !bg) return; // transparent/unknown foreground — can't judge
+			var ratio = fazContrastRatio(fg, bg);
+			if (ratio < pair.min) issues.push({ label: pair.label, ratio: ratio, min: pair.min });
+		});
+		box.textContent = '';
+		if (!issues.length) { box.style.display = 'none'; return; }
+		box.style.display = 'block';
+		// Built with DOM nodes (no innerHTML) — labels are localized/static
+		// and ratios are numbers, but textContent keeps it injection-proof.
+		var card = document.createElement('div');
+		card.style.cssText = 'border-left:4px solid var(--faz-warning,#b86900);background:#fff8e6;padding:10px 14px;border-radius:4px;font-size:13px';
+		var h = document.createElement('strong');
+		h.textContent = __('banner.contrastTitle', 'Accessibility: low colour contrast');
+		var p = document.createElement('p');
+		p.style.margin = '6px 0 4px';
+		p.textContent = __('banner.contrastIntro', 'These colour pairs fall below the WCAG AA 4.5:1 minimum and may be hard to read:');
+		var ul = document.createElement('ul');
+		ul.style.cssText = 'margin:0;padding-left:18px';
+		issues.forEach(function (i) {
+			var li = document.createElement('li');
+			li.textContent = i.label + ' — ' + i.ratio.toFixed(2) + ':1 (min ' + i.min + ':1)';
+			ul.appendChild(li);
+		});
+		card.appendChild(h);
+		card.appendChild(p);
+		card.appendChild(ul);
+		box.appendChild(card);
+	}
+
+	// Toggle "Do Not Sell" colour row when law changes
+	var lawEl = document.getElementById('faz-b-law');
+	if (lawEl) {
+		lawEl.addEventListener('change', function () {
+			toggleDoNotSellColorRow(lawEl.value);
+		});
+	}
 
 	FAZ.ready(function () {
 		// Serialize visible TinyMCE content into bannerData BEFORE FAZ.tabs
@@ -142,6 +242,7 @@
 				previewTimer = setTimeout(function () {
 					syncFormToBannerData();
 					refreshPreview();
+					fazCheckContrast();
 				}, 600);
 			});
 			bannerEl.addEventListener('input', function (e) {
@@ -151,18 +252,18 @@
 					previewTimer = setTimeout(function () {
 						syncFormToBannerData();
 						refreshPreview();
+						fazCheckContrast();
 					}, 300);
 				}
 			});
 		}
 
-		// Toggle "Do Not Sell" colour row when law changes
-		var lawEl = document.getElementById('faz-b-law');
-		if (lawEl) {
-			lawEl.addEventListener('change', function () {
-				toggleDoNotSellColorRow(lawEl.value);
-			});
-		}
+		// --- WCAG colour-contrast checker (SC 1.4.3) -------------------------
+		// The banner colours are admin-configurable, so the shipped AA-clean
+		// defaults are no guarantee — a custom palette can drop key text/
+		// background pairs below the 4.5:1 minimum. This is a non-blocking
+		// advisory rendered at the top of the Colours tab; it never prevents
+		// saving (the admin is the data controller and may have a reason).
 
 		// ── Brand Logo Media Uploader ──
 		initBrandLogoUploader();
@@ -237,6 +338,8 @@
 			ensurePreviewFrame(false);
 			// Render live preview
 			refreshPreview();
+			// Surface any below-AA colour pairs already saved on this banner.
+			fazCheckContrast();
 			// Multi-banner switcher (1.14.0+) — list every banner row so
 			// the admin can jump between them via ?banner_id=N.
 			populateSwitcher();
@@ -1447,13 +1550,18 @@
 
 	function setPathValue(obj, path, value) {
 		var parts = String(path || '').split('.');
-		var ref = obj;
-		for (var i = 0; i < parts.length - 1; i++) {
-			var key = parts[i];
+		// Reject any prototype-pollution segment up front (paths come from
+		// trusted data-path attributes, but guard defensively).
+		if (parts.some(function (k) { return k === '__proto__' || k === 'constructor' || k === 'prototype'; })) return;
+		var last = parts.pop();
+		if (last === undefined) return;
+		// Traverse-or-create the parent via reduce (a pure walk, not a
+		// mutating for-loop); the only write is the single assignment below.
+		var parent = parts.reduce(function (ref, key) {
 			if (!isPlainObject(ref[key])) ref[key] = {};
-			ref = ref[key];
-		}
-		ref[parts[parts.length - 1]] = value;
+			return ref[key];
+		}, obj);
+		parent[last] = value;
 	}
 
 		function syncPreferenceCenterToggle(section, current) {
@@ -2385,17 +2493,17 @@
 	}
 	function ensureObj(obj, path) {
 		if (!obj || typeof obj !== 'object' || !path) return;
-		var blocked = { '__proto__': true, 'constructor': true, 'prototype': true };
-		var keys = path.split('.');
-		var cur = obj;
-		for (var i = 0; i < keys.length; i++) {
-			var key = keys[i];
-			if (blocked[key]) return;
+		var keys = String(path).split('.');
+		// Reject any prototype-pollution segment up front.
+		if (keys.some(function (k) { return k === '__proto__' || k === 'constructor' || k === 'prototype'; })) return;
+		// Traverse-or-create each segment via reduce (a pure walk, not a
+		// mutating for-loop); every container is a null-prototype object.
+		keys.reduce(function (cur, key) {
 			if (!Object.prototype.hasOwnProperty.call(cur, key) || !cur[key] || typeof cur[key] !== 'object') {
 				cur[key] = Object.create(null);
 			}
-			cur = cur[key];
-		}
+			return cur[key];
+		}, obj);
 	}
 
 })();

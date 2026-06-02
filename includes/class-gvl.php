@@ -298,6 +298,191 @@ class Gvl {
 	}
 
 	/**
+	 * Suggest IAB GVL vendor IDs from the cookies the scanner has
+	 * already catalogued for this site. Reviewer Niharika asked for a
+	 * "scan for ad vendors" shortcut so the 700+ vendor table doesn't
+	 * have to be browsed by hand. This helper does the lookup:
+	 *
+	 *   1. Read every distinct cookie domain stored in wp_faz_cookies.
+	 *   2. Match each domain against the curated domain → vendor-ID
+	 *      map shipped at admin/modules/gvl/data/domain-to-vendor.json.
+	 *      Matching is "domain suffix-aware" — `subdomain.linkedin.com`
+	 *      matches the `linkedin.com` entry without requiring an exact
+	 *      string equality (cookies frequently live on a subdomain).
+	 *   3. Intersect the resulting vendor IDs with the IDs that the
+	 *      downloaded GVL actually carries. Vendors that have left the
+	 *      list (de-registered, withdrawn) are dropped silently so the
+	 *      caller does not end up with stale IDs.
+	 *
+	 * The mapping JSON is intentionally conservative: every entry is a
+	 * vendor whose IAB GVL ID is published in the official registry
+	 * (https://vendor-list.consensu.org/v3/vendor-list.json) and whose
+	 * tracking domains are industry-recognised. Community contributions
+	 * (PRs adding entries with citations) are welcome — schema is
+	 * `{ "mappings": { "<domain>": [<vendor_id>, …] } }`.
+	 *
+	 * Returns the sorted, unique vendor IDs to show as "suggested"
+	 * checkboxes in the admin UI, alongside a `scan_available` flag so the
+	 * caller can distinguish "the scanner never ran" (no discovered rows)
+	 * from "the scanner ran but nothing matched / the GVL isn't downloaded".
+	 * Mirrors Cookie_Policy_Api::scan_discovered_services(). `vendor_ids`
+	 * is empty when the cookies table is missing / the scanner never ran /
+	 * no domain matched / the GVL hasn't been downloaded; `scan_available`
+	 * is true whenever at least one discovered row exists, regardless of
+	 * whether any matched.
+	 *
+	 * @return array{vendor_ids: int[], scan_available: bool}
+	 */
+	public function suggest_vendor_ids_from_scanned_cookies() {
+		global $wpdb;
+		// Whitelist-sanitise the table identifier. It is server-derived from the
+		// WP prefix (no user input), but stripping anything outside [A-Za-z0-9_]
+		// makes the interpolated query below provably injection-safe in code,
+		// not just by convention. ($wpdb->prepare()'s %i identifier placeholder
+		// would be cleaner but needs WP 6.2+; this plugin keeps Requires at least 5.0.)
+		$table = preg_replace( '/[^A-Za-z0-9_]/', '', $wpdb->prefix . 'faz_cookies' );
+		// Safety: bail if the schema isn't installed yet (fresh install before
+		// activation hooks fire, or test harness that drops tables between runs).
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$exists = (string) $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) );
+		if ( $exists !== $table ) {
+			return array( 'vendor_ids' => array(), 'scan_available' => false );
+		}
+		// Restrict to scanner-discovered rows only — `discovered = 1` is
+		// the column the cookie scanner sets when it actually OBSERVED a
+		// cookie on the site (versus rows the admin added by hand from
+		// the Cookies admin page). The auto-detect feature is meant to
+		// surface vendors backing real network traffic; a manually-added
+		// row is, by definition, already known to the admin and should
+		// not retroactively trigger a TCF-vendor suggestion. CodeRabbit
+		// PR #127 review (2026-05-27) flagged the broader query as a
+		// source of potential false positives — confirmed.
+		// No `domain <> ''` filter — a blank-domain discovered row must still
+		// count toward scan_available (the scanner DID run), and the matching
+		// loop skips blank domains anyway. Mirrors scan_discovered_services().
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$domains        = (array) $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT domain FROM `{$table}` WHERE discovered = %d", 1 ) );
+		$scan_available = ! empty( $domains );
+		if ( ! $scan_available ) {
+			return array( 'vendor_ids' => array(), 'scan_available' => false );
+		}
+
+		$map = self::load_domain_vendor_map();
+		if ( empty( $map ) ) {
+			return array( 'vendor_ids' => array(), 'scan_available' => true );
+		}
+
+		// Cache lookup keys for the suffix scan. The map keys are
+		// `linkedin.com`, `googletagmanager.com` etc.; the cookie
+		// `domain` column tends to carry the same plus optional leading
+		// dot (`.linkedin.com`) or subdomain (`m.linkedin.com`).
+		$map_keys = array_keys( $map );
+		$matched  = array();
+		foreach ( $domains as $raw_domain ) {
+			$d = strtolower( ltrim( (string) $raw_domain, '.' ) );
+			if ( '' === $d ) {
+				continue;
+			}
+			// Exact match first (cheapest, covers most rows). Do NOT `continue`
+			// after an exact hit — a longer host (e.g. `challenges.cloudflare.com`)
+			// can ALSO suffix-match a parent key (`cloudflare.com`) and add more
+			// vendors. $matched dedupes by id, so collecting both is safe.
+			if ( isset( $map[ $d ] ) ) {
+				foreach ( (array) $map[ $d ] as $vid ) {
+					$matched[ (int) $vid ] = true;
+				}
+			}
+			// Suffix match: cookie domain `m.linkedin.com` against map key `linkedin.com`.
+			// Guard against false positives by requiring a dot before the
+			// candidate suffix — `notlinkedin.com` must NOT match
+			// `linkedin.com`. The "." prefix achieves that.
+			foreach ( $map_keys as $key ) {
+				if ( substr( $d, -( strlen( $key ) + 1 ) ) === '.' . $key ) {
+					foreach ( (array) $map[ $key ] as $vid ) {
+						$matched[ (int) $vid ] = true;
+					}
+				}
+			}
+		}
+
+		if ( empty( $matched ) ) {
+			return array( 'vendor_ids' => array(), 'scan_available' => true );
+		}
+
+		// Filter out IDs that the currently-downloaded GVL doesn't carry
+		// any longer (vendor de-registered, GVL never downloaded yet).
+		// When the GVL has NOT been downloaded there is no live vendor list
+		// to validate against, so we cannot certify any of the matched IDs.
+		// Return an empty array rather than the unvalidated `$matched` set:
+		// the documented response shape (vendor_ids + gvl_available=false)
+		// must never carry stale/unvalidated IDs to its consumers.
+		$gvl_data = $this->get_data();
+		if ( $gvl_data && isset( $gvl_data['vendors'] ) && is_array( $gvl_data['vendors'] ) ) {
+			$live_ids = array_map( 'intval', array_keys( $gvl_data['vendors'] ) );
+			$matched  = array_intersect_key( $matched, array_flip( $live_ids ) );
+		} else {
+			return array( 'vendor_ids' => array(), 'scan_available' => true );
+		}
+
+		$ids = array_keys( $matched );
+		sort( $ids );
+		return array( 'vendor_ids' => $ids, 'scan_available' => true );
+	}
+
+	/**
+	 * Load the bundled domain → vendor-ID map. The file lives outside
+	 * the plugin's PHP autoload path on purpose: it is plain data the
+	 * community is invited to extend via PRs without touching PHP.
+	 *
+	 * Cached in a static var per request — the file is < 5 KB so a
+	 * cold read costs microseconds, but the static cache keeps repeated
+	 * calls (e.g. from the REST endpoint + the admin notice on the
+	 * same load) at zero I/O.
+	 *
+	 * @return array<string, int[]>
+	 */
+	private static function load_domain_vendor_map() {
+		static $cached = null;
+		if ( null !== $cached ) {
+			return $cached;
+		}
+		$file = dirname( __DIR__ ) . '/admin/modules/gvl/data/domain-to-vendor.json';
+		if ( ! is_readable( $file ) ) {
+			$cached = array();
+			return $cached;
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading a plugin-shipped JSON data file, not user content.
+		$json = (string) file_get_contents( $file );
+		$decoded = json_decode( $json, true );
+		if ( ! is_array( $decoded ) || empty( $decoded['mappings'] ) || ! is_array( $decoded['mappings'] ) ) {
+			$cached = array();
+			return $cached;
+		}
+		// Normalise: lowercase domain keys, drop the `_comment` / `_schema_version` meta.
+		$out = array();
+		foreach ( $decoded['mappings'] as $domain => $vendors ) {
+			if ( ! is_string( $domain ) || '' === $domain ) {
+				continue;
+			}
+			if ( ! is_array( $vendors ) ) {
+				continue;
+			}
+			$ids = array();
+			foreach ( $vendors as $v ) {
+				$vid = (int) $v;
+				if ( $vid > 0 ) {
+					$ids[] = $vid;
+				}
+			}
+			if ( ! empty( $ids ) ) {
+				$out[ strtolower( $domain ) ] = $ids;
+			}
+		}
+		$cached = $out;
+		return $cached;
+	}
+
+	/**
 	 * Get download metadata.
 	 *
 	 * @return array { version: int, vendor_count: int, last_updated: string, timestamp: int }

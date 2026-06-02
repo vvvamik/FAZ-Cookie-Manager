@@ -21,14 +21,48 @@
  */
 
 import { test, expect, type Page } from '../fixtures/wp-fixture';
+import { wpEval } from '../utils/wp-env';
 
 const ADMIN_PAGE = '/wp-admin/admin.php?page=faz-cookie-manager-cookie-policy';
 const REST_BASE = '/wp-json/faz/v1/cookie-policy';
-// The "Cookie Policy" page is part of the test-site seed (see CLAUDE.md
-// — http://127.0.0.1:9998/policy/ resolves to it). We don't create one
-// per test: reusing the seed avoids polluting wp_posts across runs and
-// keeps the cookie inventory wired through the real shortcode path.
+// The public "Cookie Policy" page (http://127.0.0.1:9998/policy/) hosts the
+// real [faz_cookie_policy_complete] shortcode — these regression tests visit
+// it as a public page to exercise the true render path. It is provisioned
+// idempotently in beforeAll (see ensurePolicyPage) so the suite survives a
+// DB rebuild / a fresh CI install where the seed page is absent, instead of
+// silently failing with an empty article.
 const POLICY_PUBLIC_PATH = '/policy/';
+const POLICY_PAGE_SLUG = 'policy';
+const POLICY_SHORTCODE = '[faz_cookie_policy_complete]';
+
+/**
+ * Ensure a published page at /policy/ containing the cookie-policy shortcode
+ * exists. Idempotent: if the page already exists it only repairs the slug /
+ * status / content if they drifted, so re-runs never create duplicates.
+ */
+function ensurePolicyPage(): void {
+  wpEval(`
+    $slug = ${JSON.stringify(POLICY_PAGE_SLUG)};
+    $content = ${JSON.stringify(POLICY_SHORTCODE)};
+    $existing = get_page_by_path( $slug, OBJECT, 'page' );
+    if ( $existing instanceof WP_Post ) {
+      $needs = array();
+      if ( $existing->post_status !== 'publish' ) { $needs['post_status'] = 'publish'; }
+      if ( strpos( (string) $existing->post_content, 'faz_cookie_policy' ) === false ) { $needs['post_content'] = $content; }
+      if ( $needs ) { $needs['ID'] = $existing->ID; wp_update_post( $needs ); }
+      echo 'policy_page=' . $existing->ID;
+    } else {
+      $id = wp_insert_post( array(
+        'post_title'   => 'Cookie Policy',
+        'post_name'    => $slug,
+        'post_status'  => 'publish',
+        'post_type'    => 'page',
+        'post_content' => $content,
+      ) );
+      echo 'policy_page=' . ( is_wp_error( $id ) ? 'ERR:' . $id->get_error_message() : $id );
+    }
+  `);
+}
 
 // Module-scope auth state, populated by beforeEach. Matches the pattern
 // in settings-options-behavior.spec.ts so the X-WP-Nonce header rides
@@ -83,6 +117,13 @@ test.describe('Cookie Policy 1.16.2 — regression suite', () => {
   // workers. Sequential keeps the fixture deterministic.
   test.describe.configure({ mode: 'serial' });
 
+  test.beforeAll(() => {
+    // Self-provision the public /policy/ page so the visit-the-public-page
+    // tests (#5, #4-Layout, wp-internal exclusion) render the real shortcode
+    // even on a freshly-rebuilt DB where the seed page is missing.
+    ensurePolicyPage();
+  });
+
   test.beforeEach(async ({ page, loginAsAdmin }) => {
     adminPage = page;
     await loginAsAdmin(adminPage);
@@ -121,11 +162,17 @@ test.describe('Cookie Policy 1.16.2 — regression suite', () => {
       expect(articleHtml, 'utm_source leaked into rendered policy').not.toContain('utm_source=');
       expect(articleHtml, 'fbclid leaked into rendered policy').not.toContain('fbclid=');
       expect(articleHtml, '_ga leaked into rendered policy').not.toContain('_ga=');
-      // Stronger structural assertion: any /policy/ URL inside the article
-      // must end at the trailing slash (no `?` query suffix).
+      // Stronger structural assertion: if any /policy/ URL surfaces in
+      // the article (e.g. via a section_overrides custom template that
+      // still uses {{COOKIE_POLICY_URL}}), it must end at the trailing
+      // slash — no `?` query suffix. The default 1.16.3 templates no
+      // longer reference the placeholder in the opening paragraph (the
+      // domain is already named via {{COMPANY_NAME}} earlier in the
+      // sentence, Gooloo feedback), so the typical default render now
+      // has zero policy URLs — that's fine; this test only constrains
+      // the cleanliness of whatever URLs DO appear.
       const urlMatches = articleHtml.match(/https?:\/\/[^"'\s<)]+/g) || [];
       const policyUrls = urlMatches.filter((u) => u.includes('/policy'));
-      expect(policyUrls.length, 'no policy URL placeholder found in rendered HTML').toBeGreaterThan(0);
       for (const u of policyUrls) {
         expect(u, `policy URL still contains query string: ${u}`).not.toMatch(/\?/);
       }
@@ -239,6 +286,33 @@ test.describe('Cookie Policy 1.16.2 — regression suite', () => {
     expect(html, 'EDPB sentence still rendered in EN policy').not.toContain('European Data Protection Board');
     // The "Supervisory authority" H2 header should also be gone.
     expect(html, 'Supervisory authority section header still rendered').not.toMatch(/<h2>\s*Supervisory authority\s*<\/h2>/);
+  });
+
+  test('1.16.3 — redundant ({{COOKIE_POLICY_URL}}) removed from intro paragraph in all default templates', async () => {
+    // Gooloo feedback on 1.16.2: the intro paragraph used to say
+    // "...uses cookies on this website ({{COOKIE_POLICY_URL}}), in compliance..."
+    // which, after substitution, prints the full URL right after the
+    // company name that's already named two clauses earlier. Pure
+    // redundancy + ugly on long URLs. 1.16.3 drops the parenthetical
+    // from the 18 default scaffolds (6 langs × 3 jurisdictions). The
+    // placeholder still resolves if a section_overrides template uses
+    // it — only the default body changed.
+    const langs = ['en', 'it', 'fr', 'de', 'es', 'pt-BR'];
+    const jurisdictions = ['gdpr-strict', 'ccpa-california', 'lgpd-brazil'];
+    for (const lang of langs) {
+      for (const jurisdiction of jurisdictions) {
+        const html = await callPreview({ settings: previewSettings({ default_lang: lang, jurisdiction }) });
+        // No literal placeholder leaked.
+        expect(html, `${jurisdiction}/${lang}: raw placeholder leaked`).not.toContain('{{COOKIE_POLICY_URL}}');
+        // No "(https://...)" tail right after a "this website" / "this site"
+        // phrase. Cheap, language-agnostic check: look for the pattern
+        // `<phrase ending in a noun> (https://` anywhere in the article.
+        // The default templates only ever produced that pattern via the
+        // parenthetical we just removed.
+        const pattern = /\b(website|site|sitio|sito|sito web|Website)\s+\(https?:\/\//;
+        expect(html, `${jurisdiction}/${lang}: redundant URL in parens still rendered`).not.toMatch(pattern);
+      }
+    }
   });
 
   test('wp-internal cookies excluded from the rendered policy', async ({ wpBaseURL }) => {

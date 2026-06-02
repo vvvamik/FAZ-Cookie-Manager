@@ -1115,6 +1115,7 @@ class Frontend {
 			'_shortCodes'   => $this->prepare_shortcodes( $banner->get_settings() ),
 			'_i18n'         => array(
 				'privacy_region_label'                  => __( 'We value your privacy', 'faz-cookie-manager' ),
+				'consent_saved'                         => __( 'Your cookie preferences have been saved.', 'faz-cookie-manager' ),
 				'optout_preferences_label'              => __( 'Opt-out Preferences', 'faz-cookie-manager' ),
 				'customise_consent_preferences_label'   => __( 'Customise Consent Preferences', 'faz-cookie-manager' ),
 				'service_consent_label'                 => __( 'Service consent', 'faz-cookie-manager' ),

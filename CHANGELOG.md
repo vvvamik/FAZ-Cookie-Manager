@@ -2,6 +2,44 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.17.0] — 2026-05-31
+
+### Added
+
+- **Auto-detect vendors / services from the cookie scanner.** The IAB TCF Global Vendor List admin page and the Cookie Policy "Third-party services" tab each gained an **Auto-detect from cookie scan** button. It pre-ticks the vendors (GVL) / services (Cookie Policy) whose tracking domains the scanner has actually observed on the site, reading `SELECT DISTINCT domain FROM wp_faz_cookies WHERE discovered = 1` and matching against a bundled `domain → vendor-id` (`admin/modules/gvl/data/domain-to-vendor.json`) / `domain → service-id` (`admin/modules/cookie-policy-generator/data/domain-to-service.json`) map. A dot-prefix suffix guard means `.m.linkedin.com` matches `linkedin.com` but `.notlinkedin.com` does not, and only scanner-discovered rows feed suggestions — manually-added cookies (`discovered = 0`) are admin curation, not observed traffic, and are ignored. The REST endpoints (`gvl/suggest`, `cookie-policy/suggest-services`, `cookie-policy/detected-services`) are gated behind a `manage_options` capability check and are strictly read-only (GET only; the write endpoints they sit alongside additionally verify a nonce).
+- **Live colour-contrast checker on Banner > Colours.** Because banner colours are admin-configurable, the shipped AA-clean defaults are no guarantee. A non-blocking advisory now renders at the top of the Colours tab and flags any text/background pair (title, description, link, each button, category label, Do-Not-Sell) whose WCAG contrast ratio drops below the AA 4.5:1 minimum, recomputed live as colours change. It never prevents saving — the admin remains the data controller.
+- **Redundant geo-routing cache-bypass warning.** A configuration that emits `Cache-Control: no-store` on every page *without any functional benefit* now raises a dismissible `admin_notice`: geo-targeting on with `default_behavior = no_banner`, but no target regions selected and no banner carrying a target-countries list, so the per-country gate (`Frontend::is_geo_banner_disabled()`, which keys off the global `target_regions`) can never actually fire. The notice explains the symptom (every page a cache MISS, Lighthouse drop) and offers two AJAX actions: **Disable Geo-routing now** (clears `geolocation.geo_targeting`) and **dismiss** (a 30-day transient, so the warning resurfaces if the configuration drifts back into the redundant state). When target regions *are* selected the banner genuinely varies by country and the no-store is justified — the notice stays hidden. Behaviour is attached via `wp_add_inline_script` (Plugin-Check-clean). Covered by `tests/e2e/specs/redundant-geo-routing-warning.spec.ts`.
+
+### Accessibility (WCAG 2.2 AA)
+
+- Recording a consent choice now announces *"Your cookie preferences have been saved."* through a visually-hidden `role="status"` `aria-live="polite"` region, so screen-reader users get a spoken outcome instead of the banner silently disappearing (SC 4.1.3 Status Messages).
+- Banner slide-in animations (`faz-classic-expand` / `faz-classic-top-expand`) are disabled under `@media (prefers-reduced-motion: reduce)`.
+- The close-button image is now decorative (`alt=""`); the accessible name comes from the button's localized `aria-label`, avoiding a hardcoded, untranslated "Close" being announced twice.
+- The GVL auto-detect status region renders its "Loading saved selection…" hydrating message server-side so the disabled control has accessible context before JS runs.
+
+### Security / Hardening
+
+- The scanned-cookie suggest/detected pair now derives `scan_available` **and** the matched id list from a **single** `SELECT` (`scan_discovered_services()` / the GVL equivalent), closing a TOCTOU window where a concurrent row delete between the old separate `COUNT` and `SELECT DISTINCT` could return `scan_available = true` with an empty match list and mis-route the UI hint.
+- `SHOW TABLES LIKE` existence probes wrap the table name in `$wpdb->esc_like()` so a `_` in the table prefix matches literally instead of as a single-char wildcard.
+- The cookie-name wildcard matcher (`_fazCookieNameMatches`) was reimplemented as literal-segment glob matching — **no dynamic `RegExp`** — removing all ReDoS surface.
+- Cross-domain consent forwarding validates `event.origin` against an explicit target allow-list before any message data is read.
+- The `FAZ.deepGet` / `FAZ.deepSet` / `setPathValue` / `ensureObj` dot-path helpers were refactored to prototype-pollution-safe forms (up-front `__proto__` / `constructor` / `prototype` rejection + `reduce`-based traversal).
+- CI pins `@wordpress/env@11.7.0` and Plugin Check `1.9.0` so a transitive release cannot change the gate outcome without a deliberate bump.
+
+### Fixed
+
+- Resolved the CodeRabbit review threads on the feature: button CTA parity, scanning-status `aria-live` timing, `FAZ.btnLoading` idempotency (snapshot the label only once), redundant `table_exists` round-trips, deterministic sort parity between the GVL and Cookie Policy suggesters, and returning `[]` when the GVL is absent.
+- `svcAutoDetectDone` reworded from the math-like `"%1$d new + %2$d already selected"` to the translation-friendly `"Pre-ticked %1$d new service(s), %2$d were already selected."`; hardcoded `#c4302b` / `#1d7d28` status hexes replaced with the `--faz-danger` / `--faz-success` design tokens; raw `err.message` no longer surfaced in the auto-detect status (logged to the console instead).
+- **Redundant policy-URL parenthetical removed** from the intro paragraph of all 18 Cookie Policy template scaffolds (`gdpr-strict`, `ccpa-california`, `lgpd-brazil` × en/it/fr/de/es/pt-BR). The `({{COOKIE_POLICY_URL}})` echo duplicated a link already present elsewhere on the rendered page; the placeholder itself remains supported for `section_overrides`.
+
+### i18n
+
+- Regenerated `languages/faz-cookie-manager.pot` and the bundled `.po` / `.mo` catalogs (cs_CZ, de_DE, fr_FR, hr_HR, it_IT, nl_NL) — the catalog had drifted to 574 strings and now tracks the full 1109-string surface.
+
+### Tests
+
+- New E2E specs `gvl-vendor-auto-detect.spec.ts` and `cookie-policy-service-auto-detect.spec.ts` (suffix-match guard, `discovered = 0` exclusion, allowlist pruning, `scan_available` semantics, admin pre-tick + save round-trip). Both share `wp_faz_cookies`, so a cross-worker file mutex (`tests/e2e/utils/db-lock.ts`) serialises them under parallel CI workers. Updated the P2-A cookie-policy regression to the 1.16.2 `<table>` layout and made it self-contained against category-table pollution.
+
 ## [1.16.2] — 2026-05-26
 
 ### Fixed

@@ -104,7 +104,10 @@ class Admin {
 		add_action( 'admin_notices', array( $this, 'cookie_definitions_notice' ) );
 		add_action( 'admin_notices', array( $this, 'scheduled_scan_notice' ) );
 		add_action( 'admin_notices', array( $this, 'unmatched_vendors_notice' ) );
+		add_action( 'admin_notices', array( $this, 'redundant_geo_routing_notice' ) );
 		add_action( 'wp_ajax_faz_dismiss_unmatched', array( $this, 'ajax_dismiss_unmatched_vendors' ) );
+		add_action( 'wp_ajax_faz_disable_redundant_geo_routing', array( $this, 'ajax_disable_redundant_geo_routing' ) );
+		add_action( 'wp_ajax_faz_dismiss_redundant_geo_routing', array( $this, 'ajax_dismiss_redundant_geo_routing' ) );
 		add_filter( 'plugin_action_links_' . FAZ_PLUGIN_BASENAME, array( $this, 'plugin_action_links' ) );
 		add_action( 'wp_dashboard_setup', array( $this, 'register_dashboard_widget' ) );
 		add_action( 'rest_api_init', array( $this, 'add_rest_nocache_headers' ) );
@@ -491,6 +494,9 @@ class Admin {
 					'saved'                    => __( 'Settings saved successfully.', 'faz-cookie-manager' ),
 					'saveFailed'               => __( 'Failed to save settings.', 'faz-cookie-manager' ),
 					'loadFailed'               => __( 'Failed to load settings.', 'faz-cookie-manager' ),
+					// Default loading-button label for FAZ.btnLoading (faz-admin.js)
+					// when a call site passes no explicit label.
+					'saving'                   => __( 'Saving…', 'faz-cookie-manager' ),
 					'confirmDelete'            => __( 'Are you sure you want to delete this?', 'faz-cookie-manager' ),
 					// (banner-status toggle strings live in the consolidated 'banner'
 				// sub-array further down — kept together to avoid PHP's last-key-wins
@@ -586,6 +592,18 @@ class Admin {
 						'enabled'                  => __( 'Cookie banner enabled.', 'faz-cookie-manager' ),
 						'disabled'                 => __( 'Cookie banner disabled.', 'faz-cookie-manager' ),
 						'toggleFailed'             => __( 'Failed to update banner status.', 'faz-cookie-manager' ),
+						// Colour-contrast checker (Colours tab, WCAG SC 1.4.3).
+						'contrastTitle'            => __( 'Accessibility: low colour contrast', 'faz-cookie-manager' ),
+						'contrastIntro'            => __( 'These colour pairs fall below the WCAG AA 4.5:1 minimum and may be hard to read:', 'faz-cookie-manager' ),
+						'cTitle'                   => __( 'Title vs banner background', 'faz-cookie-manager' ),
+						'cDesc'                    => __( 'Description vs banner background', 'faz-cookie-manager' ),
+						'cLink'                    => __( 'Link vs banner background', 'faz-cookie-manager' ),
+						'cAccept'                  => __( 'Accept button text vs its background', 'faz-cookie-manager' ),
+						'cReject'                  => __( 'Reject button text vs its background', 'faz-cookie-manager' ),
+						'cSettings'                => __( 'Settings button text vs its background', 'faz-cookie-manager' ),
+						'cSave'                    => __( 'Save button text vs its background', 'faz-cookie-manager' ),
+						'cCatLabel'                => __( 'Category label vs banner background', 'faz-cookie-manager' ),
+						'cDoNotSell'               => __( 'Do Not Sell text vs banner background', 'faz-cookie-manager' ),
 					),
 					// Settings page.
 					'settings'                 => array(
@@ -651,6 +669,8 @@ class Admin {
 						'selectedVendors'          => __( 'Selected: %d vendors', 'faz-cookie-manager' ),
 						/* translators: %d: number of vendors saved */
 						'savedCount'               => __( 'Saved %d vendor(s).', 'faz-cookie-manager' ),
+						'selectedLoadFailed'       => __( 'Could not load your saved selection — reload before changing it.', 'faz-cookie-manager' ),
+						'notHydrated'              => __( 'Your saved selection has not loaded yet — reload the page before saving.', 'faz-cookie-manager' ),
 						'selectionSaved'           => __( 'vendor(s) saved.', 'faz-cookie-manager' ),
 						'selectionSavedWithCount'  => __( 'Saved {count} vendor(s).', 'faz-cookie-manager' ),
 						'selectionFailed'          => __( 'Failed to save selection.', 'faz-cookie-manager' ),
@@ -660,6 +680,19 @@ class Admin {
 						'version'                  => __( 'GVL Version: ', 'faz-cookie-manager' ),
 						'vendors'                  => __( 'Vendors: ', 'faz-cookie-manager' ),
 						'lastUpdated'              => __( 'Last Updated: ', 'faz-cookie-manager' ),
+						// Auto-detect-vendors-from-cookie-scan button feedback.
+						'autoDetectScanning'       => __( 'Scanning cookie inventory…', 'faz-cookie-manager' ),
+						'autoDetectHydrating'      => __( 'Loading saved selection…', 'faz-cookie-manager' ),
+						'autoDetectNoGvl'          => __( 'Update the Global Vendor List first, then try Auto-detect again.', 'faz-cookie-manager' ),
+						'autoDetectNoScan'         => __( 'No scanner data yet. Run the cookie scanner first.', 'faz-cookie-manager' ),
+						'autoDetectNoMatch'        => __( 'No matching ad-tech vendors were found in the scanned cookies.', 'faz-cookie-manager' ),
+						/* translators: %d: number of vendors pre-ticked from the cookie scan */
+						'autoDetectAdded'          => __( 'Pre-ticked %d vendor(s) from cookie scan. Click Save Selection to apply.', 'faz-cookie-manager' ),
+						/* translators: %d: number of auto-detected vendors already in the selection */
+						'autoDetectAllAlready'     => __( 'All %d auto-detected vendor(s) were already in your selection.', 'faz-cookie-manager' ),
+						/* translators: %1$d: number of newly pre-ticked vendors, %2$d: number already selected */
+						'autoDetectMixed'          => __( 'Pre-ticked %1$d new vendor(s), %2$d were already selected. Click Save Selection to apply.', 'faz-cookie-manager' ),
+						'autoDetectFailed'         => __( 'Auto-detect failed. Check the cookie scanner and try again.', 'faz-cookie-manager' ),
 					),
 					// Import/Export page.
 					'importExport'             => array(
@@ -713,7 +746,7 @@ class Admin {
 						'attestDpfScc'                 => __( 'I attest to having a DPF / SCC / DPA agreement with ipinfo.io for cross-border data transfer of EU/UK visitor IPs (required for opt-in)', 'faz-cookie-manager' ),
 						// PIPL panel.
 						'piplAttestText'               => __( 'I attest to having a Standard Contract (PIPL Art. 38) or CAC security assessment (Art. 40) for cross-border data transfers OF data subject to PIPL, OR to not process any data that requires such mechanisms.', 'faz-cookie-manager' ),
-						/* translators: 1: localised timestamp, 2: WP user id of the attesting admin */
+						/* translators: %1$s: localised timestamp, %2$s: WP user id of the attesting admin */
 						'piplAttestedAt'               => __( 'Attested at %1$s by user ID %2$s', 'faz-cookie-manager' ),
 						// Common buttons.
 						'save'                         => __( 'Save', 'faz-cookie-manager' ),
@@ -727,6 +760,18 @@ class Admin {
 						'saved'                    => __( 'Saved.', 'faz-cookie-manager' ),
 						'saveFailed'               => __( 'Save failed', 'faz-cookie-manager' ),
 						'previewFailed'            => __( 'Preview failed', 'faz-cookie-manager' ),
+						// Auto-detect-from-cookie-scan button + Detected badge.
+						'svcDetectedBadge'         => __( 'Detected', 'faz-cookie-manager' ),
+						'svcDetectedTooltip'       => __( 'The cookie scanner observed a tracking domain for this service on your site.', 'faz-cookie-manager' ),
+						'svcAutoDetectScanning'    => __( 'Scanning cookie inventory…', 'faz-cookie-manager' ),
+						'svcAutoDetectNoScan'      => __( 'No scanner data yet. Run the cookie scanner first.', 'faz-cookie-manager' ),
+						'svcAutoDetectNoMatch'     => __( 'No matching services found among scanned cookies.', 'faz-cookie-manager' ),
+						/* translators: %d: number of detected services already selected */
+						'svcAutoDetectAllAlready'  => __( 'All %d detected service(s) are already selected.', 'faz-cookie-manager' ),
+						'svcAutoDetectNoneAdded'   => __( 'Detected services left unticked, as you set them.', 'faz-cookie-manager' ),
+						/* translators: %1$d: number of newly pre-ticked services, %2$d: number of services already selected */
+						'svcAutoDetectDone'        => __( 'Pre-ticked %1$d new service(s), %2$d were already selected. Click Save to commit.', 'faz-cookie-manager' ),
+						'svcAutoDetectFailed'      => __( 'Auto-detect failed', 'faz-cookie-manager' ),
 						// Group headings.
 						'grpAnalytics'             => __( 'Analytics', 'faz-cookie-manager' ),
 						'grpHeatmaps'              => __( 'Heatmaps & session recording', 'faz-cookie-manager' ),
@@ -1553,6 +1598,219 @@ class Admin {
 		check_ajax_referer( 'faz_dismiss_unmatched', '_wpnonce' );
 		delete_transient( 'faz_unmatched_vendors' );
 		wp_die();
+	}
+
+	/**
+	 * Detect a configuration that makes the plugin emit Cache-Control:
+	 * no-store on every page WITHOUT any functional benefit. The single
+	 * combination that triggers this is:
+	 *
+	 *   - geo-routing toggle on (settings.geolocation.geo_targeting=true)
+	 *   - default_behavior set to "no_banner" (the only value that flips
+	 *     send_geo_cache_headers() via is_country_dependent_output())
+	 *   - no global target regions selected (settings.geolocation.target_regions
+	 *     empty) — the country split the no_banner gate keys off in
+	 *     Frontend::is_geo_banner_disabled() is empty, so the gate can never
+	 *     hide the banner for one country and show it for another
+	 *   - at least one banner configured, and no banner has a target_countries
+	 *     list (so the per-banner geo gate isn't doing anything either)
+	 *   - IAB TCF disabled (else the no-cache is justified anyway)
+	 *
+	 * In that configuration the plugin penalises the CDN cache for the
+	 * entire site while neither the global target-regions gate nor any
+	 * per-banner target-countries list can actually produce a per-country
+	 * split — same symptom James (gooloo / english truffles) hit in support
+	 * thread "Performance Impact???". Detecting it lets us point admins
+	 * at a one-click resolution. Note: when target_regions IS populated the
+	 * banner genuinely varies by country, so the no-store is justified and
+	 * this returns false (no warning).
+	 *
+	 * Returns true when the user-visible warning should be shown.
+	 *
+	 * @return bool
+	 */
+	private function is_redundant_geo_routing_active() {
+		$settings = get_option( 'faz_settings', array() );
+		$geo      = isset( $settings['geolocation'] ) && is_array( $settings['geolocation'] ) ? $settings['geolocation'] : array();
+		$iab      = isset( $settings['iab'] ) && is_array( $settings['iab'] ) ? $settings['iab'] : array();
+
+		if ( empty( $geo['geo_targeting'] ) ) {
+			return false;
+		}
+		$default_behavior = isset( $geo['default_behavior'] ) ? (string) $geo['default_behavior'] : 'show_banner';
+		if ( 'no_banner' !== $default_behavior ) {
+			return false;
+		}
+		if ( ! empty( $iab['enabled'] ) ) {
+			return false;
+		}
+		if ( ! class_exists( '\\FazCookie\\Admin\\Modules\\Banners\\Includes\\Controller' ) ) {
+			return false;
+		}
+		$controller = \FazCookie\Admin\Modules\Banners\Includes\Controller::get_instance();
+		if ( $controller->has_country_dependent_banners() ) {
+			return false;
+		}
+		$banners = $controller->get_items();
+		if ( ! is_array( $banners ) || count( $banners ) < 1 ) {
+			// Zero banners means the plugin isn't really in use yet —
+			// no point nagging. has_country_dependent_banners() above
+			// already filtered out the "multi-banner with at least one
+			// target_countries set" case, so the warning fires whenever
+			// the admin has 1+ banners but NONE of them carries a
+			// target-countries list — which is exactly the configuration
+			// where Geo-routing's no_banner gate cannot fire usefully.
+			return false;
+		}
+		// The global "hide banner outside target regions" gate
+		// (Frontend::is_geo_banner_disabled) keys off
+		// settings.geolocation.target_regions — NOT the per-banner
+		// target_countries that has_country_dependent_banners() inspects.
+		// When at least one target region is selected, the banner genuinely
+		// varies by visitor country (in-region visitors see it, others do
+		// not), so the Cache-Control: no-store IS functionally justified and
+		// the configuration is not redundant. Only when no target region is
+		// selected does the no_banner gate have nothing to act on, making the
+		// full-page-cache penalty pointless — which is the case we warn about.
+		$target_regions = isset( $geo['target_regions'] ) && is_array( $geo['target_regions'] )
+			? array_filter( $geo['target_regions'] )
+			: array();
+		if ( ! empty( $target_regions ) ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Render a dismissible admin warning when is_redundant_geo_routing_active()
+	 * matches. Two action buttons:
+	 *   - "Disable Geo-routing" — one-click fix via AJAX (faz_disable_redundant_geo_routing)
+	 *   - "Open Geo-routing settings" — link to the relevant admin tab
+	 *
+	 * The "dismiss" cross suppresses the notice for the current site for
+	 * the lifetime of the redundant configuration; clearing the geo_targeting
+	 * flag (or any of the other guards) makes the notice eligible again on
+	 * the next admin load, so a reverted change reopens the alert.
+	 *
+	 * @return void
+	 */
+	public function redundant_geo_routing_notice() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( ! faz_is_admin_page() ) {
+			return;
+		}
+		if ( ! $this->is_redundant_geo_routing_active() ) {
+			return;
+		}
+		if ( get_transient( 'faz_dismiss_redundant_geo_routing' ) ) {
+			return;
+		}
+
+		$disable_nonce = wp_create_nonce( 'faz_disable_redundant_geo_routing' );
+		$dismiss_nonce = wp_create_nonce( 'faz_dismiss_redundant_geo_routing' );
+		$settings_url  = admin_url( 'admin.php?page=faz-cookie-manager-settings#faz-geo-regions' );
+
+		echo '<div class="notice notice-warning is-dismissible" id="faz-redundant-geo-routing-notice">';
+		echo '<p><strong>' . esc_html__( 'FAZ Cookie Manager — Geo-routing is on but has no effect', 'faz-cookie-manager' ) . '</strong></p>';
+		echo '<p>' . esc_html__( 'Geo-routing is enabled in Settings with "Hide banner outside target regions" as the default behaviour, but no target regions are selected and none of your banners has a target-countries list. In this configuration the plugin tells the CDN that every page is country-dependent (so no full-page cache is kept) while the geo-routing gate has nothing to target, so it can never actually fire. The most common symptom is "X-Cdn-Cache-Status: MISS" on every page, and a Lighthouse drop.', 'faz-cookie-manager' ) . '</p>';
+		echo '<p>' . esc_html__( 'If you do NOT need per-country banners, the safe fix is to disable Geo-routing. If you DO want per-country banners, select one or more target regions in Settings → Geolocation, or add a target-countries list to at least one banner — the warning will clear on its own.', 'faz-cookie-manager' ) . '</p>';
+		printf(
+			'<p><button type="button" class="button button-primary" id="faz-disable-redundant-geo-routing" data-nonce="%s">%s</button> <a href="%s" class="button">%s</a></p>',
+			esc_attr( $disable_nonce ),
+			esc_html__( 'Disable Geo-routing now', 'faz-cookie-manager' ),
+			esc_url( $settings_url ),
+			esc_html__( 'Open Geo-routing settings', 'faz-cookie-manager' )
+		);
+		echo '</div>';
+
+		// Notice behaviour is attached via wp_add_inline_script (not a raw
+		// <script> echo) so Plugin Check's WordPress.Security.EscapeOutput
+		// sniff stays clean — same lesson recorded on print_api_fetch_polyfill()
+		// above. The faz-admin handle is always enqueued on FAZ admin pages
+		// (enqueue_scripts() gates on faz_is_admin_page(), the same gate this
+		// notice uses), so the inline script always has a host handle.
+		$inline_js = sprintf(
+			'(function(){' .
+			'var notice=document.getElementById("faz-redundant-geo-routing-notice");' .
+			'if(!notice){return;}' .
+			'var btn=notice.querySelector("#faz-disable-redundant-geo-routing");' .
+			'if(btn){btn.addEventListener("click",function(){' .
+			'btn.disabled=true;btn.textContent=%1$s;' .
+			'var body=new URLSearchParams();' .
+			'body.set("action","faz_disable_redundant_geo_routing");' .
+			'body.set("_wpnonce",btn.dataset.nonce);' .
+			'fetch(ajaxurl,{method:"POST",credentials:"same-origin",body:body})' .
+			'.then(function(r){return r.json();})' .
+			'.then(function(json){' .
+			'if(json&&json.success){notice.querySelector("p:last-of-type").textContent=%2$s;}' .
+			'else{btn.disabled=false;btn.textContent=%3$s;}' .
+			'})' .
+			'.catch(function(){btn.disabled=false;btn.textContent=%3$s;});' .
+			'});}' .
+			'var dismissNonce=%4$s;' .
+			'notice.addEventListener("click",function(e){' .
+			'var target=e.target;' .
+			'if(!target||!target.classList||!target.classList.contains("notice-dismiss")){return;}' .
+			'var body=new URLSearchParams();' .
+			'body.set("action","faz_dismiss_redundant_geo_routing");' .
+			'body.set("_wpnonce",dismissNonce);' .
+			'fetch(ajaxurl,{method:"POST",credentials:"same-origin",body:body});' .
+			'});' .
+			'})();',
+			wp_json_encode( __( 'Disabling…', 'faz-cookie-manager' ) ),
+			wp_json_encode( __( 'Geo-routing disabled. The CDN cache should start filling again within minutes of organic traffic.', 'faz-cookie-manager' ) ),
+			wp_json_encode( __( 'Disable Geo-routing now', 'faz-cookie-manager' ) ),
+			wp_json_encode( $dismiss_nonce )
+		);
+		wp_add_inline_script( 'faz-admin', $inline_js, 'after' );
+	}
+
+	/**
+	 * AJAX handler — flips settings.geolocation.geo_targeting off in the
+	 * faz_settings option. Atomic (single update_option call), idempotent
+	 * (running it twice on an already-disabled config is a no-op), guarded
+	 * by capability + nonce.
+	 *
+	 * @return void
+	 */
+	public function ajax_disable_redundant_geo_routing() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+			return;
+		}
+		check_ajax_referer( 'faz_disable_redundant_geo_routing', '_wpnonce' );
+
+		$settings = get_option( 'faz_settings', array() );
+		if ( ! is_array( $settings ) ) {
+			$settings = array();
+		}
+		if ( ! isset( $settings['geolocation'] ) || ! is_array( $settings['geolocation'] ) ) {
+			$settings['geolocation'] = array();
+		}
+		$settings['geolocation']['geo_targeting'] = false;
+		update_option( 'faz_settings', $settings );
+		delete_transient( 'faz_dismiss_redundant_geo_routing' );
+		wp_send_json_success();
+	}
+
+	/**
+	 * AJAX handler — silence the notice without changing settings. Stored
+	 * as a 30-day transient (long enough that the warning doesn't pester
+	 * an admin who has read it, short enough that a setting drift will
+	 * surface it again on the next month's admin session).
+	 *
+	 * @return void
+	 */
+	public function ajax_dismiss_redundant_geo_routing() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+			return;
+		}
+		check_ajax_referer( 'faz_dismiss_redundant_geo_routing', '_wpnonce' );
+		set_transient( 'faz_dismiss_redundant_geo_routing', 1, 30 * DAY_IN_SECONDS );
+		wp_send_json_success();
 	}
 
 	/**

@@ -30,6 +30,29 @@
 	// fetch resolved.
 	var previewRequestId = 0;
 
+	// Per-request monotonic id for the auto-detect button. Same pattern
+	// as previewRequestId — guards against rapid clicks letting an
+	// earlier /suggest-services response paint stale state over a newer
+	// one. Mirrors the GVL admin page's autoDetectRequestId (PR #127).
+	var autoDetectRequestId = 0;
+
+	// Service IDs the admin manually UNTICKED during this session (since the
+	// last hydration / save). Auto-detect consults this so a re-run does not
+	// silently re-tick a detected service the admin deliberately removed
+	// before saving (F009). A null-prototype map is used as a Set so a
+	// service id that collides with an Object.prototype member name (e.g.
+	// "constructor") can never read as a spurious truthy hit. Reset on
+	// hydration (writeForm) and after a successful save — the saved state
+	// becomes the new baseline.
+	var userUntickedServices = Object.create(null);
+
+	// Set of service IDs the scanner has observed on this site. Populated
+	// in init() by GET /detected-services. Used by renderServicesList()
+	// to draw a small "Detected" badge next to the matching checkboxes so
+	// the admin understands why auto-detect would pre-tick them. Empty
+	// object (never null) so the lookup is always safe.
+	var detectedServiceIds = Object.create(null);
+
 	function api(method, path, body) {
 		var FAZ = window.FAZ;
 		var verb = String(method || 'GET').toUpperCase();
@@ -162,6 +185,11 @@
 		document.querySelectorAll('#cp-services-list input[type=checkbox]').forEach(function (cb) {
 			cb.checked = services.indexOf(cb.dataset.serviceId) !== -1;
 		});
+		// The hydrated state is the new baseline — clear any in-session
+		// manual-untick tracking so Auto-detect re-suggests freely (F009).
+		// Programmatic .checked above does not fire 'change', so the map is
+		// not about to be repopulated by this write.
+		userUntickedServices = Object.create(null);
 	}
 
 	// ---------- services list (renders the checkboxes) ----------
@@ -316,6 +344,27 @@
 				cb.dataset.serviceId = svc.id;
 				label.appendChild(cb);
 				label.appendChild(document.createTextNode(svc.label));
+				// "Detected" badge — only when the cookie scanner has actually
+				// observed a tracking domain associated with this service ID.
+				// Uses a null-prototype lookup (detectedServiceIds is built via
+				// Object.create(null)) so a service ID accidentally equal to
+				// "constructor" or "toString" can't false-positive.
+				if (Object.prototype.hasOwnProperty.call(detectedServiceIds, svc.id)) {
+					var badge = document.createElement('span');
+					// .faz-badge + .faz-badge-success supply the radius,
+					// font-weight and the correct design-token colours (no
+					// hardcoded hex). faz-svc-detected-badge is both the test
+					// selector (cookie-policy-service-auto-detect.spec.ts) and
+					// the source of the compact sizing override — including the
+					// padding (1px 6px, which overrides .faz-badge's 2px 8px;
+					// see faz-admin.css).
+					badge.className = 'faz-badge faz-badge-success faz-svc-detected-badge';
+					badge.title = t( 'svcDetectedTooltip', 'The cookie scanner observed a tracking domain for this service on your site.' );
+					badge.setAttribute( 'aria-label', t( 'svcDetectedTooltip', 'The cookie scanner observed a tracking domain for this service on your site.' ) );
+					badge.style.cssText = 'margin-left:4px;';
+					badge.textContent = t( 'svcDetectedBadge', 'Detected' );
+					label.appendChild(badge);
+				}
 				wrap.appendChild(label);
 			});
 			container.appendChild(wrap);
@@ -356,25 +405,248 @@
 		var el = document.getElementById('cp-save-status');
 		if (!el) { return; }
 		el.textContent = msg || '';
-		el.style.color = kind === 'error' ? '#c4302b' : (kind === 'ok' ? '#1d7d28' : '');
+		el.style.color = kind === 'error' ? 'var(--faz-danger, #c03658)' : (kind === 'ok' ? 'var(--faz-success, #17785b)' : '');
 		if (msg && kind === 'ok') {
 			setTimeout(function () { el.textContent = ''; }, 3000);
 		}
 	}
 
+	// Closure-level timer handle for the auto-detect status auto-clear.
+	// Cleared at the start of every setAutoDetectStatus() call so a stale
+	// timer scheduled by a previous 'ok' message can never blank a newer
+	// scanning/error message that was painted afterwards.
+	var autoDetectStatusTimer = null;
+	function setAutoDetectStatus(msg, kind) {
+		var el = document.getElementById('cp-services-auto-detect-status');
+		if (!el) { return; }
+		if (autoDetectStatusTimer) { clearTimeout(autoDetectStatusTimer); autoDetectStatusTimer = null; }
+		el.textContent = msg || '';
+		el.style.color = kind === 'error' ? 'var(--faz-danger, #c03658)' : (kind === 'warning' ? 'var(--faz-warning, #b86900)' : (kind === 'ok' ? 'var(--faz-success, #17785b)' : 'var(--faz-text-secondary, #555)'));
+		// Mirror setStatus(): auto-clear the success message after 3s.
+		// 'error' and scanning ('') states stay persistent (no timer).
+		if (msg && kind === 'ok') {
+			autoDetectStatusTimer = setTimeout(function () { el.textContent = ''; autoDetectStatusTimer = null; }, 3000);
+		}
+	}
+
+	function autoDetectServices() {
+		var btn = document.getElementById('cp-services-auto-detect');
+		if (!btn || btn.disabled) { return; }
+		// Race-guard: capture this invocation's id before issuing the
+		// async fetch. If the user clicks again before we resolve, a
+		// newer id is captured and our then-handler bails out so the
+		// older /suggest-services response never paints over the newer
+		// result. Mirrors the GVL admin page's pattern (PR #127).
+		autoDetectRequestId += 1;
+		var myReqId = autoDetectRequestId;
+		// Spinner + disabled state via the shared FAZ.btnLoading helper
+		// (parity with gvl.js). Read-only scan, so pass the scan-specific
+		// label instead of letting it default to "Saving...". btnLoading
+		// stashes the original button text in dataset.origText and restores
+		// it on the false call.
+		var FAZ = window.FAZ;
+		if (FAZ && typeof FAZ.btnLoading === 'function') {
+			FAZ.btnLoading(btn, true, t( 'svcAutoDetectScanning', 'Scanning cookie inventory…' ));
+		} else {
+			btn.disabled = true;
+		}
+		setAutoDetectStatus(t( 'svcAutoDetectScanning', 'Scanning cookie inventory…' ), '');
+
+		api('GET', 'suggest-services')
+			.then(function (resp) {
+				if (myReqId !== autoDetectRequestId) { return; } // stale, drop
+				if (FAZ && typeof FAZ.btnLoading === 'function') { FAZ.btnLoading(btn, false); } else { btn.disabled = false; }
+				if (!resp || resp.scan_available !== true) {
+					setAutoDetectStatus(t( 'svcAutoDetectNoScan', 'No scanner data yet. Run the cookie scanner first.' ), 'warning');
+					return;
+				}
+				var newly  = (resp && Array.isArray(resp.newly_suggested))  ? resp.newly_suggested  : [];
+				var already = (resp && Array.isArray(resp.already_selected)) ? resp.already_selected : [];
+				if (newly.length === 0 && already.length === 0) {
+					setAutoDetectStatus(t( 'svcAutoDetectNoMatch', 'No matching services found among scanned cookies.' ), '');
+					return;
+				}
+				// Nothing new to add but the detected services are already
+				// selected: confirm that and OMIT the "Click Save to commit"
+				// prompt — there is nothing to save. Mirrors gvl.js's
+				// autoDetectAllAlready branch (added.length === 0).
+				if (newly.length === 0 && already.length > 0) {
+					var allAlreadyTpl = t( 'svcAutoDetectAllAlready', 'All %d detected service(s) are already selected.' );
+					setAutoDetectStatus(allAlreadyTpl.replace('%d', String(already.length)), 'ok');
+					return;
+				}
+				// Pre-tick the newly_suggested checkboxes. Already-selected
+				// boxes stay checked (they already are). Save commits.
+				// EXCEPT services the admin manually unticked this session: a
+				// detected service the admin deliberately removed (before
+				// saving) must not be silently re-ticked by a later Auto-detect
+				// run (F009). Auto-detect stays additive without reversing the
+				// admin's unsaved intent.
+				var list = document.getElementById('cp-services-list');
+				var skipped = 0;
+				if (list) {
+					var boxes = list.querySelectorAll('input[type=checkbox][data-service-id]');
+					for (var i = 0; i < boxes.length; i++) {
+						var sid = boxes[i].dataset.serviceId;
+						if (newly.indexOf(sid) === -1) { continue; }
+						if (userUntickedServices[sid]) { skipped += 1; continue; }
+						boxes[i].checked = true;
+					}
+				}
+				// Report what was ACTUALLY pre-ticked, not the raw suggestion
+				// count: services the admin unticked this session were skipped
+				// above, so the count must subtract them or the status would
+				// claim more boxes than it ticked (the desync CodeRabbit flagged
+				// on F009).
+				var addedCount = newly.length - skipped;
+				if (addedCount === 0) {
+					// Every newly-detected service was one the admin unticked
+					// this session — nothing was pre-ticked, so omit the "Click
+					// Save" prompt. Confirm without lying about a pending change.
+					var noneMsg = (already.length > 0)
+						? t( 'svcAutoDetectAllAlready', 'All %d detected service(s) are already selected.' ).replace('%d', String(already.length))
+						: t( 'svcAutoDetectNoneAdded', 'Detected services left unticked, as you set them.' );
+					setAutoDetectStatus(noneMsg, 'ok');
+					return;
+				}
+				// Accept both positional (%1$d / %2$d — WP i18n best practice
+				// for translators that need to reorder) AND plain %d / %d
+				// in the English fallback string. Pure ordered .replace('%d', …)
+				// chains break under reordering — same fragility CodeRabbit
+				// flagged on the GVL admin page (F006, below_gate).
+				var template = t( 'svcAutoDetectDone', 'Pre-ticked %1$d new service(s), %2$d were already selected. Click Save to commit.' );
+				var formatted = template
+					.replace(/%1\$d/g, String(addedCount))
+					.replace(/%2\$d/g, String(already.length))
+					.replace('%d', String(addedCount))
+					.replace('%d', String(already.length));
+				setAutoDetectStatus(formatted, 'ok');
+			})
+			.catch(function (err) {
+				if (myReqId !== autoDetectRequestId) { return; }
+				if (FAZ && typeof FAZ.btnLoading === 'function') { FAZ.btnLoading(btn, false); } else { btn.disabled = false; }
+				// Keep the raw server error in the console for debugging, but
+				// show the admin actionable copy only — don't surface verbatim
+				// WP_Error / internal detail in the UI (matches the GVL sibling).
+				if (window.console && console.error) { console.error('FAZ: service auto-detect failed', err); }
+				setAutoDetectStatus(t( 'svcAutoDetectFailed', 'Auto-detect failed. Check the cookie scanner and try again.' ), 'error');
+			});
+	}
+
 	function init() {
+		// Initial render runs sync (badges absent because detected set is
+		// empty); the /detected-services fetch below re-renders with the
+		// "Detected" badges painted in. This keeps the page interactive
+		// during the round-trip rather than blocking on a network call
+		// the user may not even care about (some sites have no scanner
+		// data at all). Both rendering passes preserve the checkbox
+		// state because writeForm() runs after the second render.
 		renderServicesList();
 
-		api('GET', 'settings')
-			.then(function (data) { writeForm(data); })
-			.catch(function (err) { setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + err.message, 'error'); });
+		// Bind + disable Auto-detect BEFORE the Promise.all fires. If
+		// the user clicks the button during hydration, writeForm(settings)
+		// would race and overwrite the just-applied auto-detect ticks
+		// with the saved option's state, silently dropping the user's
+		// action. Disabled until writeForm runs in the .then() resolver.
+		// CodeRabbit PR #127 review (2026-05-27) flagged this race.
+		var autoDetectBtn = document.getElementById('cp-services-auto-detect');
+		if (autoDetectBtn) {
+			autoDetectBtn.disabled = true;
+			autoDetectBtn.addEventListener('click', autoDetectServices);
+		}
+
+		// Track the admin's manual tick/untick of service checkboxes so
+		// Auto-detect can skip a detected service the admin deliberately
+		// unticked this session (F009). Delegated on the container because
+		// the checkboxes are (re)rendered dynamically by renderServicesList().
+		// Programmatic `cb.checked = …` in writeForm() does NOT fire 'change',
+		// so hydration never pollutes this map.
+		var servicesListEl = document.getElementById('cp-services-list');
+		if (servicesListEl) {
+			servicesListEl.addEventListener('change', function (e) {
+				var cb = e.target;
+				if (!cb || cb.type !== 'checkbox' || !cb.dataset || !cb.dataset.serviceId) { return; }
+				if (cb.checked) {
+					delete userUntickedServices[cb.dataset.serviceId];
+				} else {
+					userUntickedServices[cb.dataset.serviceId] = true;
+				}
+			});
+		}
+
+		// Tracks whether the saved settings actually loaded. If the GET failed
+		// the form holds only defaults, so we must NOT re-enable Auto-detect or
+		// allow a submit — saving would overwrite the real config with blanks.
+		var hydrationFailed = false;
+		Promise.all([
+			api('GET', 'settings').catch(function (err) { setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + err.message, 'error'); hydrationFailed = true; return null; }),
+			api('GET', 'detected-services').catch(function () { return { service_ids: [] }; })
+		]).then(function (results) {
+			try {
+				var settings = results[0];
+				if (settings === null) { hydrationFailed = true; }
+				var detected = results[1] && Array.isArray(results[1].service_ids) ? results[1].service_ids : [];
+				// Re-render with badges if the scanner found anything. Empty
+				// detected list: skip the rerender (badges identical to first
+				// pass — no point re-painting the DOM).
+				if (detected.length > 0) {
+					detectedServiceIds = Object.create(null);
+					for (var i = 0; i < detected.length; i++) {
+						detectedServiceIds[detected[i]] = true;
+					}
+					renderServicesList();
+				}
+				// writeForm runs LAST so checkbox state from settings overrides
+				// any default in the freshly-rendered DOM. Preserves the
+				// hydration-race guard: writeForm(settings) must complete
+				// before the finally block re-enables the button.
+				if (settings) { writeForm(settings); }
+			} finally {
+				// Hydration done — Auto-detect is safe to use now (writeForm
+				// has already applied the saved selection, so subsequent
+				// auto-detect ticks can't be overwritten by a late hydration).
+				// In finally so a synchronous throw in renderServicesList()/
+				// writeForm() can never leave the button permanently disabled.
+				// Only when settings hydrated: a failed load keeps it disabled
+				// so the admin can't auto-detect/save over the real config.
+				if (autoDetectBtn && !hydrationFailed) {
+					autoDetectBtn.disabled = false;
+					// Clear the server-rendered "Loading saved selection…" hint.
+					setAutoDetectStatus('', '');
+				}
+			}
+		}).catch(function (err) {
+			// Outer safety net: a synchronous throw in renderServicesList() or
+			// writeForm() (inside the .then() try block) becomes a rejection
+			// here. Without this, it surfaces as an unhandled rejection and the
+			// "Load failed" status is lost. Re-enable Auto-detect (idempotent
+			// with the finally block) and surface the failure. Mirrors gvl.js
+			// loadSelectedVendors's .catch(). The inner api() .catch() handlers
+			// return null (no throw), so this never double-fires on that path.
+			// Keep the button disabled when settings never hydrated.
+			if (autoDetectBtn && !hydrationFailed) { autoDetectBtn.disabled = false; }
+			setStatus(t( 'loadFailed', 'Load failed' ) + ': ' + (err && err.message ? err.message : err), 'error');
+		});
 
 		document.getElementById('faz-cookie-policy-form').addEventListener('submit', function (e) {
 			e.preventDefault();
+			// Refuse to save over a config that never loaded — readForm() would
+			// serialise default/blank fields and clobber the real saved data.
+			if (hydrationFailed) {
+				setStatus(t( 'loadFailed', 'Settings did not load — reload the page before saving.' ), 'error');
+				return;
+			}
 			var payload = readForm();
 			setStatus(t( 'saving', 'Saving…' ), '');
 			api('POST', 'settings', payload)
-				.then(function () { setStatus(t( 'saved', 'Saved.' ), 'ok'); })
+				.then(function () {
+					setStatus(t( 'saved', 'Saved.' ), 'ok');
+					// Saved state is the new baseline — a service the admin
+					// unticked is now persisted as unselected, so clear the
+					// in-session tracking and let a later Auto-detect re-suggest
+					// it freely (F009).
+					userUntickedServices = Object.create(null);
+				})
 				.catch(function (err) { setStatus(t( 'saveFailed', 'Save failed' ) + ': ' + err.message, 'error'); });
 		});
 
