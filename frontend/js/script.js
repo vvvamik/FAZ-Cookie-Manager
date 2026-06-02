@@ -490,6 +490,15 @@ function _fazFireEvent(responseCategories) {
 function _fazRemoveStyles() {
     const item = document.getElementById('faz-style-inline');
     item && item.remove();
+    // Belt-and-suspenders for CSS-optimizer plugins (LiteSpeed / WP Rocket /
+    // Autoptimize) that hoist the inline #faz-style-inline block into a
+    // combined stylesheet: the removal above then no-ops and the anti-FOUC
+    // `visibility:hidden` rule survives, leaving the banner permanently hidden
+    // while its fixed container keeps eating clicks. The rule is scoped to
+    // `html:not(.faz-ready)`, so adding the class reveals the banner no matter
+    // where the rule ended up. Mirrors the server-side gate in
+    // class-frontend.php::print_inline_styles().
+    document.documentElement.classList.add('faz-ready');
 }
 
 /**

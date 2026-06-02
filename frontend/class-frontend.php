@@ -617,7 +617,19 @@ class Frontend {
 			return;
 		}
 		$placeholder_css = wp_strip_all_tags( Placeholder_Builder::get_css() );
-		echo '<style id="faz-style-inline">[data-faz-tag]{visibility:hidden;}'
+		// Anti-FOUC: hide the banner until the JS has positioned/styled it.
+		// The rule is scoped to `html:not(.faz-ready)` (instead of being a flat
+		// `[data-faz-tag]{visibility:hidden}` that the JS reveals by *removing*
+		// this whole <style> element) so the reveal survives CSS-optimizer
+		// plugins. LiteSpeed/WP Rocket/Autoptimize hoist inline <style> blocks
+		// into a combined stylesheet; once that happens the element no longer
+		// exists for `_fazRemoveStyles()` to remove and the flat rule would keep
+		// the banner permanently hidden (its fixed container still eating
+		// clicks). With the state-class gate, the JS adding `faz-ready` to
+		// <html> reveals the banner regardless of where the rule ended up.
+		// data-no-optimize / data-noptimize additionally ask LiteSpeed and
+		// Autoptimize to leave the block inline (belt-and-suspenders).
+		echo '<style id="faz-style-inline" data-no-optimize="1" data-noptimize="1">html:not(.faz-ready) [data-faz-tag]{visibility:hidden;}'
 			. $placeholder_css // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CSS stripped of all tags; esc_html() would break selectors.
 			. '</style>';
 	}
