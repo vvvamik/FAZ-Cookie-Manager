@@ -167,6 +167,7 @@ $rest_url   = esc_url( rest_url( 'faz/v1/cookie-policy/' ) );
 						<option value="de"><?php esc_html_e( 'German', 'faz-cookie-manager' ); ?></option>
 						<option value="es"><?php esc_html_e( 'Spanish', 'faz-cookie-manager' ); ?></option>
 						<option value="pt-BR"><?php esc_html_e( 'Portuguese (Brazil)', 'faz-cookie-manager' ); ?></option>
+						<option value="bg"><?php esc_html_e( 'Bulgarian', 'faz-cookie-manager' ); ?></option>
 					</select>
 				</div>
 			</div>

@@ -103,7 +103,7 @@ class Cookie_Policy_Generator {
 	 * `[faz_cookie_policy]` shortcode callback.
 	 *
 	 * Attributes:
-	 *   - lang         (en, it, fr, de, es, pt-BR) — override visitor locale
+	 *   - lang         (en, it, fr, de, es, pt-BR, bg) — override visitor locale
 	 *   - jurisdiction (gdpr-strict, ccpa-california, lgpd-brazil)
 	 *
 	 * Both are optional. Without them the renderer falls back to WP get_locale
@@ -121,6 +121,17 @@ class Cookie_Policy_Generator {
 			(array) $atts,
 			self::SHORTCODE
 		);
+		// The block / visual editor "curls" attribute quotes (lang="it" becomes
+		// lang=”it”) and WordPress' shortcode parser keeps the curly quotes as
+		// part of the value (”it”), so the language never matched a supported
+		// code and the policy silently fell back to the site locale (reported by
+		// a user whose [...lang="it"] rendered in English). A language /
+		// jurisdiction code only ever contains ASCII letters, digits and
+		// hyphens, so strip everything else — this neutralises smart quotes,
+		// straight quotes and stray whitespace regardless of encoding.
+		foreach ( array( 'lang', 'jurisdiction' ) as $faz_attr_key ) {
+			$atts[ $faz_attr_key ] = preg_replace( '/[^A-Za-z0-9-]/', '', (string) $atts[ $faz_attr_key ] );
+		}
 		return Renderer::render( $atts );
 	}
 }

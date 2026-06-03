@@ -952,6 +952,21 @@ function _fazRegisterListeners() {
     _fazAttachListener("=revisit-consent", () => _revisitFazConsent());
     _fazAttachListener("=optout-close", () => _fazHidePreferenceCenter());
 
+    // Open the preference center from any in-page trigger — the
+    // [faz_cookie_settings] shortcode button, or a custom element carrying
+    // `data-faz-open-preferences` or the `faz-cookie-settings-btn` class.
+    // Delegated on the document so it works for content rendered anywhere on
+    // the page (e.g. inside the generated cookie policy) and keeps working
+    // after the consent banner itself has been dismissed.
+    document.addEventListener("click", function (e) {
+        var trigger = e.target && e.target.closest
+            ? e.target.closest('[data-faz-open-preferences],.faz-cookie-settings-btn')
+            : null;
+        if (!trigger) return;
+        e.preventDefault();
+        _fazShowPreferenceCenter();
+    });
+
     // Escape key closes the preference center / optout popup only.
     // The main banner itself must NOT be dismissible via Escape without a
     // recorded consent choice — hiding it would mislead users into believing

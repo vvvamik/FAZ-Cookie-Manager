@@ -48,7 +48,7 @@ class Generator {
 	 *
 	 * @var string[]
 	 */
-	const LANGUAGES = array( 'en', 'it', 'fr', 'de', 'es', 'pt-BR' );
+	const LANGUAGES = array( 'en', 'it', 'fr', 'de', 'es', 'pt-BR', 'bg' );
 
 	/**
 	 * Native language per jurisdiction (statutory bias):

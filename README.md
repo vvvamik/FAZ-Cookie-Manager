@@ -563,6 +563,14 @@ Value format: `consentid:{base64},consent:yes,action:yes,necessary:yes,functiona
 
 Only the most recent release is listed here. The complete history is in [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog format) and on the [GitHub Releases page](https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases).
 
+### 1.17.2 — 2026-06-03
+- **Feature**: new `[faz_cookie_settings]` shortcode — a *Manage consent preferences* button that re-opens the preference center from anywhere on the site (the CookieYes `[cookie_settings]` equivalent). Optional `text` / `class` attributes; bound by a single delegated click handler in the banner script, so no inline JS.
+- **Feature**: Bulgarian (`bg`) added to the Cookie Policy generator as the 7th language — full gdpr-strict / ccpa-california / lgpd-brazil scaffolds, admin dropdown, display names, retention labels and disclaimer. `bg_BG` installs resolve to it automatically.
+- **Fix**: `[faz_cookie_policy_complete lang="…"]` now strips curly / smart quotes the WordPress editor inserts (`lang=”it”`) before matching, so the language is honoured instead of silently falling back to English. `lang` / `jurisdiction` are sanitised to `[A-Za-z0-9-]`.
+- **Fix**: the generated "Last updated" date is localised to the policy's template language rather than the site locale (an Italian policy now shows "giugno", not "June"), with the right date format per language.
+- **Fix**: LiteSpeed Cache compatibility — the anti-FOUC guard `<style>` and reveal markup carry `data-no-optimize` / `data-noptimize` so CSS Combine no longer hides the banner. Verified on live LiteSpeed Cache 7.8.
+- **Feature**: per-element banner colour pickers (show-details link, category toggles) on Banner → Colours, applied to the modal as well as the inline banner.
+
 ### 1.17.1 — 2026-06-02
 - **Fix**: empty cookie categories are no longer listed in the preference center or the revisit banner. A category with no cookies has nothing to consent to, yet the modal and revisit widget still showed every category — the empty-category removal only applied to the inline preview chip and was skipped in revisit mode. It now drops both the modal accordion item and the inline chip, in normal and revisit mode alike (Necessary is always shown). Consent recording is unaffected.
 

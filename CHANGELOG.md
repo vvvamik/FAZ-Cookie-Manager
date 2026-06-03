@@ -2,6 +2,25 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.17.2] — 2026-06-03
+
+### Added
+
+- **`[faz_cookie_settings]` shortcode** — renders a *Manage consent preferences* button that re-opens the consent preference center from anywhere on the site (e.g. inside the generated Cookie Policy, a footer, or a menu). This is the CookieYes `[cookie_settings]` equivalent that Bozhidar asked for. Optional attributes: `text` (custom label, default localized "Manage consent preferences") and `class` (extra CSS classes, run through `sanitize_html_class`). Implemented in `includes/class-cookie-settings-shortcode.php` and registered alongside the other front-end shortcodes in `frontend/class-frontend.php`. No inline JS and no extra asset: a single delegated `click` listener added to `frontend/js/script.js` binds every `.faz-cookie-settings-btn` / `[data-faz-open-preferences]` element to `_fazShowPreferenceCenter()` — the same opener the banner's own settings button uses — so it works after the banner has been dismissed.
+- **Bulgarian (`bg`) Cookie Policy language** — the 7th language for the Cookie Policy generator. Added `bg` to `Generator::LANGUAGES`; new `gdpr-strict/bg.md`, `ccpa-california/bg.md` and `lgpd-brazil/bg.md` template scaffolds (placeholder parity verified against `en.md`); Bulgarian entries for `jurisdiction_display_name`, `language_display_name`, `format_retention` labels and the footer disclaimer in `class-renderer.php`; and a "Bulgarian" option in the Cookie Policy admin default-language dropdown. `bg_BG` site locales resolve to the Bulgarian policy automatically via the existing `wp_locale_to_template_lang` mapping.
+- **Per-element banner colours** — the Banner → Colours admin tab gained individual colour pickers for the description "show details" link and the category toggles. Values are sanitised with `faz_sanitize_color` and emitted as CSS custom properties on both `#faz-consent` and every `.faz-modal` sibling, so the preference-center modal inherits them as well as the inline banner.
+
+### Fixed
+
+- **Smart-quote `lang` / `jurisdiction` attributes on `[faz_cookie_policy_complete]`.** When the attribute value was typed in the WordPress block or visual editor, the editor replaced the straight quotes with curly / smart quotes (`lang=”it”`, U+201C/U+201D). The shortcode parser keeps those curly quotes *inside* the value, so `it` never matched a supported language and the policy silently fell back to English — the symptom Bozhidar reported. `render_shortcode` now runs each of `lang` and `jurisdiction` through `preg_replace( '/[^A-Za-z0-9-]/', '', … )` immediately after `shortcode_atts`, stripping smart quotes, stray whitespace and any other punctuation before the value reaches `Renderer::render`. Straight-quoted and unquoted forms were always fine and stay fine.
+- **"Last updated" date localised to the wrong language.** `Renderer::format_date()` used `date_i18n()`, which localises month names to the *site* locale rather than the policy's template language — so an Italian policy rendered on an English-locale site printed "June" instead of "giugno". The date is now built from `gmdate()` numeric parts plus a per-template-language month-name table (`month_names()`), with the correct per-language date format: en `June 3, 2026`, de `3. Juni 2026`, es / pt-BR `3 de junio de 2026`, bg `3 юни 2026 г.`, it / fr (and default) `3 giugno 2026`.
+- **LiteSpeed Cache compatibility.** The anti-FOUC banner reveal hides every `[data-faz-tag]` element until `script.js` adds `faz-ready` to `<html>`, via an inline guard `<style>`. LiteSpeed's *CSS Combine* optimisation moved that inline style into a combined external stylesheet, so the reveal never fired and the banner stayed invisible with non-functional controls. The guard `<style>` and the reveal markup now carry `data-no-optimize` / `data-noptimize`, the opt-out attributes LiteSpeed Cache and Autoptimize both honour, so the guard stays inline. Verified on a live LiteSpeed Cache 7.8 server. Reported by Bozhidar.
+- **GVL auto-detect "already in session" count.** When the auto-detect added zero new vendors, the `added.length === 0` branch reported the *suggested* count instead of the already-in-session count; it now uses `alreadyInSession`.
+
+### Accessibility
+
+- `aria-label`s on the new per-element colour-picker controls in the Banner → Colours tab.
+
 ## [1.17.1] — 2026-06-02
 
 ### Fixed

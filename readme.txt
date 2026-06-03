@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.17.1
+Stable tag: 1.17.2
 Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -324,6 +324,16 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.17.2 =
+* Feature: new `[faz_cookie_settings]` shortcode renders a "Manage consent preferences" button that re-opens the consent preference center from anywhere on the site (e.g. inside the generated Cookie Policy or a footer) — the CookieYes `[cookie_settings]` equivalent. Accepts optional `text` (custom label) and `class` (extra CSS classes, sanitised) attributes. No inline JS: a single delegated click handler in the already-enqueued banner script binds every `.faz-cookie-settings-btn` / `[data-faz-open-preferences]` trigger to the same opener the banner's settings button uses.
+* Feature: Bulgarian (bg) added to the Cookie Policy generator as the 7th language — full gdpr-strict, ccpa-california and lgpd-brazil scaffolds, the language dropdown, jurisdiction / language display names, retention labels and the footer disclaimer. `bg_BG` site installs now resolve to the Bulgarian policy automatically.
+* Fix: `[faz_cookie_policy_complete lang="…"]` ignored the language when the attribute value contained curly / smart quotes (e.g. `lang=”it”`), which the WordPress block and visual editors substitute for straight quotes — the shortcode parser kept the curly quote inside the value so it never matched a supported language and fell back to English. The `lang` and `jurisdiction` attributes are now sanitised to `[A-Za-z0-9-]` after `shortcode_atts`, so smart quotes, stray spaces and other punctuation are stripped before matching. Reported by Bozhidar.
+* Fix: the "Last updated" date in generated Cookie Policies localised its month name to the *site* locale instead of the policy's template language (an Italian policy on an English site showed "June" not "giugno"). Month names are now rendered from a per-template-language table with the correct date format per language (en `June 3, 2026`, de `3. Juni 2026`, es/pt-BR `3 de junio de 2026`, bg `3 юни 2026 г.`, it/fr `3 giugno 2026`).
+* Fix: LiteSpeed Cache compatibility. The anti-FOUC banner reveal (hide `[data-faz-tag]` until the script adds `faz-ready` to `<html>`) broke when LiteSpeed's CSS Combine moved the inline guard style into a combined stylesheet — the banner stayed invisible and its controls non-functional. The guard `<style>` and the reveal markup now carry `data-no-optimize` / `data-noptimize` so LiteSpeed (and Autoptimize) leave them inline. Reported by Bozhidar.
+* Feature: per-element banner colours. The Banner > Colours tab gained individual colour pickers for the description "show details" link and the category toggles; the values flow through `faz_sanitize_color` and are emitted as CSS custom properties on both `#faz-consent` and every `.faz-modal` sibling so the preference-center modal inherits them too.
+* Fix: GVL auto-detect status now reports "already in session" correctly when zero new vendors are added (the `added.length === 0` branch previously reused the suggested count). Accessibility: aria-labels on the new colour-picker controls. readme.txt now lists all four shipped minified frontend bundles.
+* i18n: refreshed translation catalogs with the new admin and shortcode strings.
 
 = 1.17.1 =
 * Fix: empty cookie categories are no longer listed in the preference center or the revisit banner. A category with no cookies has nothing for the visitor to consent to, but the preference-center modal and the revisit widget still rendered every category. The empty-category removal previously only applied to the inline category-preview chip and was skipped entirely in revisit mode; it now also removes the modal accordion item, in both normal and revisit mode (the "necessary" category is always shown). Consent recording is unaffected — accept/reject/save iterate the in-memory category list, not the DOM.
