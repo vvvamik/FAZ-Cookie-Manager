@@ -353,8 +353,14 @@ class Frontend {
 				wp_enqueue_script( $gcm_handle, plugin_dir_url( __FILE__ ) . 'js/gcm' . $gcm_suffix . '.js', array( $script_handle ), $this->version, false );
 			}
 
-			// IAB TCF v2.3 CMP stub (when IAB is enabled in settings).
-			$iab_enabled = (bool) $this->settings->get( 'iab', 'enabled' );
+			// IAB TCF v2.3 CMP stub (when IAB is enabled AND a valid CMP ID is set).
+			// IAB Europe assigns CMP IDs; 0 and 1 are reserved/invalid. A TC string
+			// built with CmpId < 2 is rejected by the IAB-compliant ad-tech supply
+			// chain, so emitting one (the euconsent-v2 cookie) is a supply-chain
+			// non-compliance. Refuse to activate the CMP — do not enqueue tcf-cmp.js
+			// and do not emit _fazTcfConfig — until a registered CMP ID is configured.
+			$iab_enabled = (bool) $this->settings->get( 'iab', 'enabled' )
+				&& absint( $this->settings->get( 'iab', 'cmp_id' ) ) >= 2;
 			if ( $iab_enabled ) {
 				// Early command-queue stub so ad scripts can call __tcfapi before CMP loads.
 				// Handles 'ping' directly so pre-CMP callers get a valid response.
@@ -1266,7 +1272,14 @@ class Frontend {
 		$store['_gtmDataLayer'] = ! empty( $settings['banner_control']['gtm_datalayer'] );
 
 		// IAB vendor data for preference center.
-		$iab_enabled = (bool) $this->settings->get( 'iab', 'enabled' );
+		// Mirror the asset-enqueue gate above: the IAB/TCF preference UI is
+		// only surfaced when a registered CMP ID (>= 2) is configured. CMP IDs
+		// 0 and 1 are reserved/invalid in the IAB GVL, so emitting the vendor
+		// list and purpose toggles without one would show a TCF UI that can
+		// never produce a valid TC string (tcf-cmp.js is not enqueued in that
+		// state). Keep both gates in sync.
+		$iab_enabled = (bool) $this->settings->get( 'iab', 'enabled' )
+			&& absint( $this->settings->get( 'iab', 'cmp_id' ) ) >= 2;
 		$store['_iabEnabled'] = $iab_enabled;
 		if ( $iab_enabled ) {
 			$gvl = Gvl::get_instance();

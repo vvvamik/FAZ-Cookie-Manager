@@ -27,7 +27,7 @@ Most cookie consent plugins follow the same pattern: a free version with cripple
 * **Cookie Policy generator (NEW in 1.16.0)** -- Build a jurisdiction-aware Cookie Policy page directly from your admin. Pick GDPR / CCPA / LGPD, fill in your company details, and publish via the `[faz_cookie_policy_complete]` shortcode. Output is multilingual (en, it, fr, de, es, pt-BR, bg), pulls the live cookie inventory from the scanner, and ships with a non-removable disclaimer that the templates are starting points, not legal advice. The standalone `[faz_cookie_table]` shortcode (and the matching Gutenberg block) still works for embedding just the cookie list.
 * **Consent logging with CSV export** -- Every consent is recorded locally in your database. Export anytime for audits.
 * **Google Consent Mode v2** -- Sends all 7 consent signals to Google tags. No premium required.
-* **IAB TCF v2.3** -- Full Transparency and Consent Framework support, built in.
+* **IAB TCF v2.3** -- Full Transparency and Consent Framework API and UI, built in. To operate as a recognised CMP in the IAB framework you must enter your own registered IAB Europe CMP ID; without one the TCF interface stays inactive (no TC string is produced) so invalid signals are never broadcast to vendors.
 * **Geo-targeting** -- Show banners only to visitors from regulated regions (EU, California, etc.).
 * **180+ languages** -- Translate every string in the banner, or use one of the built-in translations.
 * **Script blocking** -- Tag any script with `data-faz-tag` to block it until the right category is accepted.
@@ -312,7 +312,7 @@ Yes. Place `[faz_dsar_form]` on any page to show a GDPR-compliant request form c
 3. **Admin dashboard** -- Overview of pageviews, banner impressions, accept rate and reject rate, with a 7/30/365-day pageviews chart and consent distribution.
 4. **Banner editor** -- Configure layout, position, colours, copy and behaviour with a live in-iframe preview. Ships with GDPR Strict, High Contrast and Light Minimal design presets.
 5. **Cookies management** -- Review and edit cookie categories, run the built-in scanner, and browse the bundled Open Cookie Database with 1,000+ definitions.
-6. **IAB TCF v2.3 Global Vendor List** -- Browse the bundled GVL, filter by purpose, and select which vendors your site works with. Full Transparency and Consent Framework v2.3 support, no cloud required.
+6. **IAB TCF v2.3 Global Vendor List** -- Browse the bundled GVL, filter by purpose, and select which vendors your site works with. Full Transparency and Consent Framework v2.3 API and UI, no cloud required. Note: broadcasting valid TC strings to vendors requires your own registered IAB Europe CMP ID; until one is configured the TCF layer stays inactive by design.
 7. **Consent logs** -- Local, tamper-resistant audit trail of every visitor consent: status, categories, hashed IP, URL and timestamp. Filter, search and export to CSV for DPIA / audits.
 8. **Google Consent Mode v2** -- Default vs. granted state for `ad_storage`, `analytics_storage`, `ad_user_data`, `ad_personalization`, `functionality_storage`, `personalization_storage` and `security_storage`. Works with GTM and gtag.
 9. **Languages** -- Manage active languages and the default banner language. Works alongside WPML / Polylang; Italian, Dutch, German, French and Czech translations ship out of the box.
