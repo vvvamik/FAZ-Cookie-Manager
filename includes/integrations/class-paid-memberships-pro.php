@@ -186,6 +186,31 @@ class Paid_Memberships_Pro {
 			return;
 		}
 
+		// Revocation support (members can change or withdraw their consent).
+		// If the current cookie is valid and was NOT auto-granted by this
+		// integration (it carries no `source:pmp`) yet records an explicit
+		// `action:yes`, the member opened the preference center and made their
+		// own decision. Honour it — do NOT overwrite with the all-categories
+		// auto-grant — so a member who rejects, say, marketing keeps that choice
+		// across page loads instead of having it silently re-granted on the next
+		// request. Manual saves drop the `source:pmp` marker automatically
+		// (script.js never loads `source` into the consent store, so re-
+		// serialising the cookie on a user action omits it), which is exactly
+		// what distinguishes a self-made choice from our auto-grant here.
+		//
+		// This is what makes the "pay-or-accept" exemption a revocable DEFAULT
+		// rather than an irrevocable, forced all-consent state — the lawful
+		// basis for the initial auto-grant is the site owner's to decide, but
+		// the member must always be able to override it.
+		if ( '' !== $current_cookie && ! $is_auto_granted ) {
+			$parsed_current = function_exists( 'faz_parse_consent_cookie' )
+				? faz_parse_consent_cookie( $current_cookie )
+				: array();
+			if ( isset( $parsed_current['action'] ) && 'yes' === $parsed_current['action'] ) {
+				return;
+			}
+		}
+
 		$desired_cookie = $this->build_exempted_consent_cookie_value( $current_cookie );
 		$needs_refresh  = $current_cookie !== $desired_cookie || $has_vendor_cookie || $has_tcf_cookie;
 		if ( ! $needs_refresh ) {
@@ -260,16 +285,22 @@ class Paid_Memberships_Pro {
 			return;
 		}
 
+		// httponly=false / secure=is_ssl() are REQUIRED by design and are NOT a
+		// security weakness here: `fazcookie-consent` holds only opt-in/opt-out
+		// booleans (no session token, no auth secret) and MUST be readable by
+		// the banner JS, which gates all downstream tracking on it. `secure` is
+		// already set to is_ssl() so it is marked Secure on every HTTPS site.
+		// Same contract — and same justification — as faz_set_browser_cookie().
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.cookies_setcookie
-		setcookie(
+		setcookie( // nosemgrep
 			'fazcookie-consent',
 			$value,
-			array(
+			array( // nosemgrep
 				'expires'  => $expiry,
 				'path'     => '/',
 				'domain'   => '',
-				'secure'   => is_ssl(),
-				'httponly' => false,
+				'secure'   => is_ssl(), // nosemgrep
+				'httponly' => false, // nosemgrep
 				'samesite' => 'Lax',
 			)
 		);
