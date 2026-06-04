@@ -205,35 +205,30 @@ test.describe('1.17.2 — [faz_cookie_settings] revisit shortcode', () => {
     // so a 2nd click of the [faz_cookie_settings] button flipped it to "false"
     // while the panel stayed visually open. The fix forces "true" on open.
 
-    // Capture the active banner's ORIGINAL layout fields so the shared fixture
-    // is restored to whatever it actually was (never a guessed baseline), then
-    // switch to a pushdown layout for the duration of the test. Only the two
-    // fields this test mutates are saved/restored — the rest of the blob is
-    // never touched.
+    // Capture the active banner's EXACT settings blob (base64-encoded to avoid
+    // any JSON-quoting issues round-tripping through wpEval) so the shared
+    // fixture is restored byte-for-byte in the finally — never to a hardcoded
+    // baseline or a re-encoded approximation. Then switch to a pushdown layout.
     const flushBannerCache =
       ` $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '%faz_banner_template%' OR option_name LIKE '_transient_faz_%'");`;
-    const out = wpEval(
+    const capture = wpEval(
+      `global $wpdb; $t = $wpdb->prefix . 'faz_banners';` +
+        ` $row = $wpdb->get_row("SELECT settings FROM $t WHERE banner_id=1");` +
+        ` echo 'BLOB:' . ($row ? base64_encode($row->settings) : '');`,
+    );
+    const origBlobB64 = (capture.match(/BLOB:([A-Za-z0-9+/=]*)/) || [, ''])[1];
+    expect(origBlobB64.length, 'could not read the original banner settings blob').toBeGreaterThan(0);
+
+    // Switch banner_id=1 to classic (which forces the pushdown preference center).
+    wpEval(
       `global $wpdb; $t = $wpdb->prefix . 'faz_banners';` +
         ` $row = $wpdb->get_row("SELECT settings FROM $t WHERE banner_id=1");` +
         ` $s = json_decode($row->settings, true);` +
-        ` echo 'ORIG:' . ($s['settings']['type'] ?? '') . '|' . ($s['settings']['preferenceCenterType'] ?? '');`,
+        ` $s['settings']['type'] = 'classic'; $s['settings']['preferenceCenterType'] = 'pushdown';` +
+        ` $wpdb->update($t, array('settings' => wp_json_encode($s)), array('banner_id' => 1));` +
+        flushBannerCache,
     );
-    const m = out.match(/ORIG:([A-Za-z-]*)\|([A-Za-z-]*)/);
-    expect(m, 'could not read the original banner layout').not.toBeNull();
-    const origType = m![1] || 'box';
-    const origPct = m![2] || 'popup';
 
-    const setLayout = (type: string, pct: string) =>
-      wpEval(
-        `global $wpdb; $t = $wpdb->prefix . 'faz_banners';` +
-          ` $row = $wpdb->get_row("SELECT settings FROM $t WHERE banner_id=1");` +
-          ` $s = json_decode($row->settings, true);` +
-          ` $s['settings']['type'] = '${type}'; $s['settings']['preferenceCenterType'] = '${pct}';` +
-          ` $wpdb->update($t, array('settings' => wp_json_encode($s)), array('banner_id' => 1));` +
-          flushBannerCache,
-      );
-
-    setLayout('classic', 'pushdown'); // classic forces the pushdown preference center
     try {
       await context.clearCookies();
       await page.goto(`${wpBaseURL}/${PAGES.settings.slug}/?n=${Date.now()}`, { waitUntil: 'domcontentloaded' });
@@ -256,7 +251,13 @@ test.describe('1.17.2 — [faz_cookie_settings] revisit shortcode', () => {
         'aria-expanded desynced to false on the 2nd click while the panel stayed open',
       ).toBe('true');
     } finally {
-      setLayout(origType, origPct); // restore the captured original layout
+      // Restore the EXACT original settings blob (byte-for-byte), so the shared
+      // banner_id=1 fixture is left exactly as it was found.
+      wpEval(
+        `global $wpdb; $t = $wpdb->prefix . 'faz_banners';` +
+          ` $wpdb->update($t, array('settings' => base64_decode('${origBlobB64}')), array('banner_id' => 1));` +
+          flushBannerCache,
+      );
     }
   });
 });
