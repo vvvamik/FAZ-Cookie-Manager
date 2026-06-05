@@ -157,31 +157,35 @@ class Paid_Memberships_Pro {
 		$is_exempted       = $this->is_current_user_exempted();
 
 		if ( ! $is_exempted ) {
-			// Only tear down consent tracking when the current main consent
-			// cookie was auto-granted by the PMP integration (i.e. it carries
-			// `source:pmp`). Standard visitors can legitimately carry
-			// fazVendorConsent / euconsent-v2 after an explicit banner
-			// interaction; clearing the whole consent state merely because
-			// those cookies exist would hit any non-exempt visitor who has
-			// ever interacted with the TCF CMP, producing an infinite
-			// re-consent loop on every pageload (fazVendorConsent is
-			// re-created → next pageload clears everything → banner shown
-			// again → user re-accepts → fazVendorConsent re-created → …).
+			// Tear down PMP-sourced consent tracking for a member who is no
+			// longer exempt. Two PMP-specific triggers, EITHER of which is safe:
 			//
-			// There is a known narrow edge case that this conservative
-			// branch does not cover: an ex-member whose PMP auto-granted
-			// `fazcookie-consent` has already expired (so `$is_auto_granted`
-			// is false) but who still carries `fazVendorConsent` /
-			// `euconsent-v2` from the exempt period. Broadening the
-			// condition to also fire when those vendor cookies exist would
-			// wipe the legitimate cookies of every other non-exempt visitor
-			// — a much larger regression than the residual vendor state on
-			// a specific minority path. Not fixing this here is a deliberate
-			// trade-off; the proper fix would require tagging vendor/TCF
-			// cookies as "sourced from PMP" at write time, which is out of
-			// scope for the 1.11.x line.
+			//   1. The main consent cookie is still the PMP auto-grant — it
+			//      carries `source:pmp` ($is_auto_granted). Clear the whole
+			//      consent state.
+			//   2. The `fazVendorSource=pmp` companion marker is present. It is
+			//      set ONLY for exempt members (see the exempt branch below) and
+			//      outlives the main consent cookie, so it covers the ex-member
+			//      whose auto-granted `fazcookie-consent` has already expired
+			//      ($is_auto_granted is false) but who still carries residual
+			//      `fazVendorConsent` / `euconsent-v2` from the exempt period.
+			//
+			// Crucially, a STANDARD visitor never receives `source:pmp` nor the
+			// marker, so neither trigger can ever wipe their own, legitimately
+			// self-set vendor/TCF cookies — which is what previously forced the
+			// conservative `$is_auto_granted`-only check (clearing on the mere
+			// presence of vendor cookies would loop: clear → banner → re-accept
+			// → vendor cookie re-created → clear → …). The marker breaks that
+			// tie without re-introducing the loop.
+			$pmp_vendor_marker = isset( $_COOKIE['fazVendorSource'] ) && 'pmp' === $_COOKIE['fazVendorSource'];
 			if ( $is_auto_granted && function_exists( 'faz_clear_consent_tracking_cookies' ) ) {
 				faz_clear_consent_tracking_cookies();
+			}
+			if ( ( $is_auto_granted || $pmp_vendor_marker ) && function_exists( 'faz_expire_browser_cookie' ) ) {
+				faz_expire_browser_cookie( 'fazVendorConsent' );
+				faz_expire_browser_cookie( 'euconsent-v2' );
+				faz_expire_browser_cookie( 'fazVendorSource' );
+				unset( $_COOKIE['fazVendorConsent'], $_COOKIE['euconsent-v2'], $_COOKIE['fazVendorSource'] );
 			}
 			return;
 		}
@@ -217,11 +221,41 @@ class Paid_Memberships_Pro {
 			return;
 		}
 
+		// A "new grant" is one where there was no prior valid consent cookie for
+		// this member (first exemption, or the previous one expired / was a stale
+		// revision). sync_consent_cookie() runs on every page load, but only
+		// reaches this write when the cookie actually needs refreshing — gating
+		// the audit-log write on a new grant keeps the per-pageload sync from
+		// flooding the consent log with duplicate rows for the same membership.
+		$is_new_grant = ( '' === $current_cookie );
+
 		if ( function_exists( 'faz_expire_browser_cookie' ) ) {
 			faz_expire_browser_cookie( 'fazVendorConsent' );
 			faz_expire_browser_cookie( 'euconsent-v2' );
 		}
+		// Companion marker: flag that this member's vendor/TCF state is
+		// PMP-managed. It lets the non-exempt branch above safely clear any
+		// residual fazVendorConsent / euconsent-v2 once the member loses
+		// exemption — including after the main consent cookie has expired — WITHOUT
+		// risking a standard visitor's own cookies (they never receive this
+		// marker). The 365-day TTL deliberately outlives the 180-day consent
+		// cookie so the marker is still around to trigger that cleanup. It holds
+		// no personal data — only the literal string "pmp".
+		if ( function_exists( 'faz_set_browser_cookie' ) ) {
+			faz_set_browser_cookie( 'fazVendorSource', 'pmp', time() + ( 365 * DAY_IN_SECONDS ) );
+			$_COOKIE['fazVendorSource'] = 'pmp';
+		}
 		$this->set_consent_cookie( $desired_cookie );
+
+		// Accountability: record the auto-grant in the consent log under a
+		// DISTINCT status ('pmp_grant') so it is never conflated with an
+		// explicit, freely-given consent. The lawful basis for this grant is the
+		// site owner's pay-or-accept / contract decision, NOT a clear affirmative
+		// action by the member — the log must reflect that. (The cookie already
+		// carries the matching `source:pmp` marker.)
+		if ( $is_new_grant ) {
+			$this->log_pmp_grant( $desired_cookie );
+		}
 
 		/**
 		 * Fires after the PMP integration auto-grants consent for a member.
@@ -230,6 +264,56 @@ class Paid_Memberships_Pro {
 		 * @param array $parts       Cookie parts that were set.
 		 */
 		do_action( 'faz_pmp_consent_auto_granted', get_current_user_id(), explode( ',', $desired_cookie ) );
+	}
+
+	/**
+	 * Write a consent-log row for a PMP auto-grant, tagged with the distinct
+	 * `pmp_grant` status so the audit trail distinguishes membership-basis
+	 * grants from explicit consent. No-op when consent logging is disabled or
+	 * the consent-log controller is unavailable.
+	 *
+	 * @param string $cookie_value The auto-granted consent cookie that was set.
+	 * @return void
+	 */
+	private function log_pmp_grant( $cookie_value ) {
+		$settings = new Settings();
+		if ( true !== $settings->get( 'consent_logs', 'status' ) ) {
+			return;
+		}
+		$controller = '\FazCookie\Admin\Modules\Consentlogs\Includes\Controller';
+		if ( ! class_exists( $controller ) ) {
+			return;
+		}
+
+		$parsed     = function_exists( 'faz_parse_consent_cookie' ) ? faz_parse_consent_cookie( $cookie_value ) : array();
+		$consent_id = isset( $parsed['consentid'] ) ? preg_replace( '/[^A-Za-z0-9]/', '', (string) $parsed['consentid'] ) : '';
+
+		// Reduce the parsed cookie to category states only (drop meta + scope +
+		// per-service keys), so the logged `categories` blob mirrors what an
+		// explicit consent record would store.
+		$meta       = array( 'action' => 1, 'consent' => 1, 'consentid' => 1, 'rev' => 1, 'source' => 1, 'gpc' => 1 );
+		$categories = array();
+		if ( is_array( $parsed ) ) {
+			foreach ( $parsed as $key => $value ) {
+				if ( isset( $meta[ $key ] ) ) {
+					continue;
+				}
+				if ( 0 === strpos( $key, '__scope.' ) || 0 === strpos( $key, 'svc.' ) ) {
+					continue;
+				}
+				$categories[ $key ] = $value;
+			}
+		}
+
+		call_user_func(
+			array( $controller::get_instance(), 'log_consent' ),
+			array(
+				'consent_id' => $consent_id,
+				'status'     => 'pmp_grant',
+				'categories' => $categories,
+				'url'        => '',
+			)
+		);
 	}
 
 	/**
