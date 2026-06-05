@@ -459,7 +459,13 @@ class Category_Controller extends Base_Controller {
 			$object->set_name( $name );
 			$object->set_description( $description );
 			$object->set_slug( $slug );
-			if ( 'necessary' === $slug || 'uncategorized' === $slug ) {
+			// Only the strictly-necessary category may be pre-consented. The
+			// "uncategorized" bucket holds cookies the scanner could not classify
+			// — they may well be tracking/profiling cookies, so pre-ticking them
+			// (prior_consent=true) would load them before any affirmative action,
+			// which is a pre-consent violation (EDPB Guidelines 03/2022 / ePrivacy
+			// Art. 5(3)). uncategorized now defaults to denied until opt-in.
+			if ( 'necessary' === $slug ) {
 				$object->set_prior_consent( true );
 			}
 			$object->save();
