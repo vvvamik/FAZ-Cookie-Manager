@@ -713,7 +713,14 @@ class Api extends Rest_Controller {
 		}
 
 		// --- Categories ---
-		if ( isset( $data['categories'] ) && is_array( $data['categories'] ) ) {
+		// `! empty()` (not `isset() && is_array()`): an EMPTY array must NOT
+		// enter this branch. The branch starts by `DELETE FROM` the whole
+		// categories table and then re-inserts from the payload, so an empty
+		// (malformed / partial) "categories": [] would wipe every category and
+		// insert nothing — silent data loss. An import that genuinely wants to
+		// clear categories is not a real use case (the defaults always exist),
+		// so skipping the destructive replace on an empty set is the safe choice.
+		if ( ! empty( $data['categories'] ) && is_array( $data['categories'] ) ) {
 			$table = $wpdb->prefix . 'faz_cookie_categories';
 			$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- $table is $wpdb->prefix + literal "faz_cookie_categories"; full-table TRUNCATE-equivalent used to replace the categories table with the imported set, inside an explicit transaction.
@@ -754,7 +761,10 @@ class Api extends Rest_Controller {
 		}
 
 		// --- Cookies ---
-		if ( isset( $data['cookies'] ) && is_array( $data['cookies'] ) ) {
+		// `! empty()` for the same data-loss reason as the categories branch:
+		// the branch `DELETE FROM` the whole cookies table before re-inserting,
+		// so an empty "cookies": [] must not enter it and wipe the inventory.
+		if ( ! empty( $data['cookies'] ) && is_array( $data['cookies'] ) ) {
 			$table = $wpdb->prefix . 'faz_cookies';
 			$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- $table is $wpdb->prefix + literal "faz_cookies"; full-table replace inside an explicit transaction for the import.

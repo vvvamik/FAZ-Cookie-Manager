@@ -365,18 +365,27 @@ class Api extends Rest_Controller {
 			if ( ! defined( 'FAZ_BULK_REQUEST' ) ) {
 				define( 'FAZ_BULK_REQUEST', true );
 			}
+			global $wpdb;
 			$item_objects = array();
 			$objects      = array();
 			$data         = $request['banners'];
 
+			// Wrap the multi-banner save in a transaction so a failure on banner
+			// N does not leave banners 1…N-1 committed while N+1…M are dropped —
+			// a partial save would publish an inconsistent banner set (e.g. two
+			// banners both flagged default, or a half-applied geo-routing
+			// reshuffle). Either every banner in the batch is saved or none is.
+			$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			foreach ( $data as $_banner ) {
 				$object = $this->prepare_item_for_database( $_banner );
 				$result = $object->save();
 				if ( false === $result ) {
+					$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 					return new WP_Error( 'fazcookie_rest_db_error', __( 'Failed to save banner during bulk update.', 'faz-cookie-manager' ), array( 'status' => 500 ) );
 				}
 				$item_objects[] = $object;
 			}
+			$wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			foreach ( $item_objects as $item ) {
 				$response  = $this->prepare_item_for_response( $item, $request );
 				$objects[] = $this->prepare_response_for_collection( $response );
