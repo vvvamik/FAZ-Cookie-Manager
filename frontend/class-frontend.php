@@ -2650,6 +2650,18 @@ class Frontend {
 		$categories = \FazCookie\Admin\Modules\Cookies\Includes\Category_Controller::get_instance()->get_items();
 		$blocked = array();
 
+		// CCPA/CPRA is an OPT-OUT regime: personal data may be sold/shared — and
+		// the corresponding scripts may run — UNTIL the visitor exercises the
+		// "Do Not Sell or Share" opt-out. So for a CCPA banner we do NOT block
+		// anything server-side on first visit: the banner is a NOTICE, not a
+		// gate. Once the visitor opts out, the consent cookie carries the
+		// sale/sharing categories as ":no" and the consent-present branch below
+		// blocks them on the next load (the opt-out flow reloads the page). This
+		// mirrors the client-side default (script.js sets every category to
+		// "yes" on a CCPA first visit) and removes the block→unblock flash that a
+		// blanket pre-consent block would otherwise cause under an opt-out law.
+		$is_optout_law = ( $this->banner && 'ccpa' === $this->banner->get_law() );
+
 		foreach ( $categories as $cat_data ) {
 			$category = new \FazCookie\Admin\Modules\Cookies\Includes\Cookie_Categories( $cat_data );
 			$slug     = $category->get_slug();
@@ -2657,8 +2669,12 @@ class Frontend {
 				continue;
 			}
 			if ( empty( $consent ) ) {
-				// No consent yet — block all non-necessary.
-				$blocked[] = $slug;
+				// No consent recorded yet. Under an opt-in law (GDPR/ePrivacy)
+				// block every non-necessary category until the visitor consents;
+				// under the CCPA opt-out model block nothing (see header above).
+				if ( ! $is_optout_law ) {
+					$blocked[] = $slug;
+				}
 			} else {
 				// Parse consent cookie: "consent:yes,necessary:yes,analytics:no,marketing:no"
 				if ( preg_match( '/(^|,)' . preg_quote( $slug, '/' ) . ':(\w+)/', $consent, $cm ) ) {
