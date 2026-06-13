@@ -13,6 +13,8 @@ All notable changes to FAZ Cookie Manager are documented in this file.
 ### Fixed
 
 - **Corrected an overstated per-cookie enforcement claim.** The per-cookie consent help text previously stated a denied cookie "is deleted whenever it appears — the same enforcement used for per-service opt-out." That enforcement only ran client-side at save time and did not persist across reloads, so the claim was inaccurate. The text has been corrected (and the feature itself disabled, above) so no documentation implies a guarantee the code did not deliver.
+- **Diagnostics now report the effective state.** System Status and the WP-CLI status table previously echoed the saved `per_service_consent` option, so an install that had toggled it on still showed "Per-Service Consent: enabled" while the runtime was off. Both now report it as disabled in 1.18.2, matching what the plugin actually does.
+- **Completed the geo-runtime kill switch.** A legacy install with no saved GeoIP edition no longer defaults to downloading the larger GeoLite2-City database off the back of the (now disabled) `faz_geo_ruleset_runtime` filter — it defaults to Country, and an admin can still pick City explicitly.
 
 ## [1.18.1] — 2026-06-13
 
