@@ -563,6 +563,9 @@ Value format: `consentid:{base64},consent:yes,action:yes,necessary:yes,functiona
 
 Only the most recent release is listed here. The complete history is in [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog format) and on the [GitHub Releases page](https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases).
 
+### 1.18.1 — 2026-06-13
+- **Fix**: the Cookies admin *Scan Site* / *Auto-categorize* dropdown menus are no longer clipped by the card's `overflow: hidden` — the menu drops over the table below and shows every option.
+
 ### 1.18.0 — 2026-06-12
 - **Feature**: geo-routing runtime (opt-in, `faz_geo_ruleset_runtime` filter) — the resolved per-jurisdiction ruleset drives the live banner (pre-consent default state, script blocking, Google Consent Mode v2 defaults and banner selection follow the visitor's jurisdiction: GDPR / CCPA-CPRA / Quebec Law 25 / POPIA / LGPD / …). Off by default; existing installs are unchanged until enabled.
 - **Feature**: GeoLite2 edition choice (Country vs City) under Settings → GeoIP Database. Country (~10 MB) stays the default; City (~60 MB) adds province/state (ISO 3166-2) detection needed by sub-national rulesets such as Quebec's Law 25.

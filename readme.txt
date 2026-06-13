@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.18.0
+Stable tag: 1.18.1
 Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -324,6 +324,9 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.18.1 =
+* Fix: the Cookies admin "Scan Site" and "Auto-categorize" dropdown menus are no longer clipped by the card's rounded-corner overflow — the menu now drops over the table below and shows all options.
 
 = 1.18.0 =
 * Feature: geo-routing runtime (opt-in). With the `faz_geo_ruleset_runtime` filter enabled, the resolved per-jurisdiction ruleset drives the live banner — pre-consent default state, script blocking, Google Consent Mode v2 defaults and banner selection follow the visitor's jurisdiction (GDPR, CCPA/CPRA, Quebec Law 25, POPIA, LGPD, …). Off by default: existing sites are unchanged until you enable the filter.

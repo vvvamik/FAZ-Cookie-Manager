@@ -2,6 +2,12 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.18.1] — 2026-06-13
+
+### Fixed
+
+- **Cookies admin: scan / auto-categorize dropdowns no longer clipped.** The *Scan Site* and *Auto-categorize* dropdown menus live in a card whose `overflow: hidden` (rounded-corner clipping) cut off the absolutely-positioned menu whenever the card was short enough that the menu extended past its box. The card now opts out of the clip via a `faz-card-overflow-visible` modifier, so the menu drops over the table below and shows all options.
+
 ## [1.18.0] — 2026-06-12
 
 ### Added
