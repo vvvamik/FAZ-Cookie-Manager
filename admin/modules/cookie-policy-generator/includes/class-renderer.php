@@ -954,8 +954,10 @@ class Renderer {
 				return sprintf( '%d de %s de %s', $day, $month_name, $year );  // 3 de junho de 2026
 			case 'bg':
 				return sprintf( '%d %s %s г.', $day, $month_name, $year );     // 3 юни 2026 г.
-            case 'cs':
-				return sprintf( '%d %s %s', $day, $month_name, $year ); // 3. června 2026
+			case 'cs':
+				// Czech dates take an ordinal day (trailing dot) and decline the
+				// month into the genitive — month_names() returns those forms.
+				return sprintf( '%d. %s %s', $day, $month_name, $year );       // 3. června 2026
 			default:
 				return sprintf( '%d %s %s', $day, $month_name, $year );        // it / fr: 3 giugno 2026
 		}
@@ -976,7 +978,10 @@ class Renderer {
 			'es'    => array( 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre' ),
 			'pt-BR' => array( 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro' ),
 			'bg'    => array( 'януари', 'февруари', 'март', 'април', 'май', 'юни', 'юли', 'август', 'септември', 'октомври', 'ноември', 'декември' ),
-			'cs'    => array( 'leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec' ),
+			// Genitive forms: Czech declines the month when written in a date
+			// ("3. června 2026"), and month_names() is only ever consumed by
+			// format_date(), so storing the genitive here keeps the date correct.
+			'cs'    => array( 'ledna', 'února', 'března', 'dubna', 'května', 'června', 'července', 'srpna', 'září', 'října', 'listopadu', 'prosince' ),
 		);
 		return $names[ $lang ] ?? $names['en'];
 	}
