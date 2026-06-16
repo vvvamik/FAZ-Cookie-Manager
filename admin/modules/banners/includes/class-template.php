@@ -148,6 +148,17 @@ class Template {
 		$language       = is_string( $language ) ? trim( sanitize_text_field( $language ) ) : '';
 		$this->language = '' !== $language ? $language : faz_current_language();
 		if ( $banner ) {
+			// Runtime compatibility migrations for banners saved before the
+			// CCPA Classic-guard / law-content-sync shipped: move a Classic (or
+			// Full-width + Pushdown) CCPA/Both banner to a popup-capable layout
+			// and re-sync the law-appropriate notice copy, so the Do-Not-Sell
+			// opt-out works on legacy rows without an admin re-save.
+			if ( is_callable( array( $banner, 'apply_runtime_layout_compatibility' ) ) ) {
+				$banner->apply_runtime_layout_compatibility();
+			}
+			if ( is_callable( array( $banner, 'apply_runtime_law_content_compatibility' ) ) ) {
+				$banner->apply_runtime_law_content_compatibility();
+			}
 			$this->banner     = $banner;
 			$this->properties = $banner->get_settings();
 			$this->load();
