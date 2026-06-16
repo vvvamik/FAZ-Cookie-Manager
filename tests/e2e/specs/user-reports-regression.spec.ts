@@ -429,7 +429,7 @@ test.describe('User-reported regressions (v1.11.0 publisher report)', () => {
 	/* ─────────────────────────────────────────────────────────────────
 	 * Report 3 — "Upon revisiting, ads don't load unless you reaccept"
 	 * ───────────────────────────────────────────────────────────────── */
-	test('R3: returning visitor with saved consent sees GCM default granted (no denied→granted race)', async ({ page, context, loginAsAdmin }) => {
+	test('R3: returning visitor with saved consent is restored via consent UPDATE, not a second default (issue #149)', async ({ page, context, loginAsAdmin }) => {
 		// Arrange — enable GCM.
 		await loginAsAdmin(page);
 		await page.goto(`${WP_BASE}/wp-admin/admin.php?page=faz-cookie-manager-gcm`, { waitUntil: 'domcontentloaded' });
@@ -495,29 +495,29 @@ test.describe('User-reported regressions (v1.11.0 publisher report)', () => {
 				return (dl as Array<Record<number, unknown>>).some((e) => e && typeof e === 'object' && e[0] === 'consent');
 			}, undefined, { timeout: 5_000 });
 
-			const firstConsentCall = await visitorPage.evaluate(() => {
+			const consentCalls = await visitorPage.evaluate(() => {
 				const dlName = (window as unknown as { fazSettings?: { dataLayerName?: string } }).fazSettings?.dataLayerName || 'dataLayer';
 				const dl = (window as unknown as Record<string, unknown[]>)[dlName] ?? [];
-				// Find the FIRST consent call (not the last one) — that's what
-				// AdSense reads when it fires its first ad request.
+				const calls: Array<{ mode: string; payload: Record<string, string> }> = [];
 				for (const entry of dl as Array<Record<number, unknown>>) {
 					if (!entry || typeof entry !== 'object') continue;
 					if (entry[0] !== 'consent') continue;
-					return {
-						mode: entry[1] as string,
-						payload: entry[2] as Record<string, string>,
-					};
+					calls.push({ mode: entry[1] as string, payload: (entry[2] as Record<string, string>) || {} });
 				}
-				return null;
+				return calls;
 			});
 
-			expect(firstConsentCall, 'At least one gtag consent call must fire').toBeTruthy();
-			expect(firstConsentCall!.mode, 'First consent call must be the default (not update) for returning visitors').toBe('default');
-			expect(
-				firstConsentCall!.payload?.ad_storage,
-				'First consent default MUST be granted for returning visitors (otherwise AdSense races to denied)',
-			).toBe('granted');
-			expect(firstConsentCall!.payload?.analytics_storage).toBe('granted');
+			expect(consentCalls.length, 'at least one gtag consent call must fire').toBeGreaterThan(0);
+			// Issue #149 (matches CookieYes upstream 3.4.0/3.5.1): stored consent is
+			// restored via `consent update`, NEVER a second `consent default` carrying
+			// granted values — Consent Mode tooling flags a granted default as a reset.
+			const grantedDefault = consentCalls.find((c) => c.mode === 'default' && c.payload?.ad_storage === 'granted');
+			expect(grantedDefault, 'must NOT emit a consent default with granted ad_storage (restore via update instead)').toBeUndefined();
+			const grantedUpdate = consentCalls.find((c) => c.mode === 'update' && c.payload?.ad_storage === 'granted');
+			expect(grantedUpdate, 'returning visitor stored consent must be restored via a granted consent UPDATE').toBeTruthy();
+			expect(grantedUpdate!.payload?.analytics_storage, 'analytics restored via update too').toBe('granted');
+			// The first consent call FAZ relies on is still a (denied) baseline default.
+			expect(consentCalls[0]?.mode, 'the first consent call is the baseline default').toBe('default');
 		} finally {
 			await updateGcmSettings(page, nonce, {
 				status: before.status ?? false,

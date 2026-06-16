@@ -89,14 +89,15 @@ var FAZ_META_KEYS = { rev: 1, action: 1, consentid: 1, gpc: 1 };
 
 var initialCookieObj = parseConsentCookie();
 
-if (initialCookieObj) {
-    // Returning visitor with saved consent: skip region defaults and emit the
-    // final state directly. buildConsentState() handles the non-personalized
-    // ads fallback when applicable.
-    setConsentInitStates(buildConsentState(initialCookieObj));
-} else {
-    // First-time visitor (or cookie expired/cleared): emit region-specific
-    // defaults as configured by the admin.
+// Baseline consent DEFAULT (region-specific / denied) is ALWAYS emitted first —
+// for first-time AND returning visitors. Consent Mode expects exactly one
+// well-formed `consent default` before any update; emitting a SECOND
+// `consent default` with granted values to restore a returning visitor (issue
+// #149) is flagged by Consent Mode tooling as resetting consent. The returning
+// visitor's stored grants are restored via `consent update` below instead — the
+// brief denied window is covered by wait_for_update on this baseline default.
+{
+    // Region-specific defaults as configured by the admin.
     //
     // ad_storage stays at the admin-configured (typically "denied") region
     // value before the visitor interacts. The "non-personalized ads fallback"
@@ -150,6 +151,14 @@ if (initialCookieObj) {
         });
         setNpaIfDenied("denied");
     }
+}
+
+// Returning visitor with saved consent: restore it via `consent update` (the
+// GCM-correct restoration signal), NOT a second `consent default`.
+// buildConsentState() also emits the non-personalized-ads npa signal (two-sided)
+// so it self-clears here when marketing was granted.
+if (initialCookieObj) {
+    updateConsentState(buildConsentState(initialCookieObj));
 }
 
 function parseConsentCookieParts() {
