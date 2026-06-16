@@ -1629,7 +1629,13 @@ class Frontend {
 		 * @param array    $store    The assembled store payload.
 		 * @param Frontend $frontend The frontend instance.
 		 */
-		$store = apply_filters( 'faz_store_data', $store, $this );
+		$filtered_store = apply_filters( 'faz_store_data', $store, $this );
+		// Defend against a misbehaving filter callback that returns a non-array
+		// (null, string, …): keep the original store rather than fatalling on the
+		// array index below before the frontend can localise _fazConfig.
+		if ( is_array( $filtered_store ) ) {
+			$store = $filtered_store;
+		}
 
 		// Per-cookie consent stays hard-off until its enforcement rework is
 		// complete — reassert it AFTER the faz_store_data filter so a third-party

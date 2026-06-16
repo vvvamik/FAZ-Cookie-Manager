@@ -257,7 +257,13 @@ class Controller {
 				if ( $count >= 250 ) {
 					break;
 				}
-				$key   = substr( sanitize_text_field( (string) $key ), 0, 190 );
+				$key = substr( sanitize_text_field( (string) $key ), 0, 190 );
+				// Only yes/no scalars are valid. Skip nested arrays/objects before
+				// the string cast so a crafted payload can't trigger an
+				// array-to-string warning (or an object __toString fatal).
+				if ( ! is_scalar( $value ) ) {
+					continue;
+				}
 				$value = sanitize_text_field( (string) $value );
 				if ( '' === $key || ! in_array( $value, array( 'yes', 'no' ), true ) ) {
 					continue;
