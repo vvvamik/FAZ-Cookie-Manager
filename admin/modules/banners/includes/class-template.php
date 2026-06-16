@@ -168,7 +168,11 @@ class Template {
 	 * @return void
 	 */
 	public function load() {
-		if ( true === $this->is_preview() || empty( $this->get_stored() ) ) {
+		$stored = $this->get_stored();
+		if ( true === $this->is_preview()
+			|| empty( $stored )
+			|| ! isset( $stored['layout_signature'] )
+			|| $this->get_layout_signature() !== $stored['layout_signature'] ) {
 			$this->generate();
 		} else {
 			$this->set_template();
@@ -642,11 +646,12 @@ class Template {
 		$stored    = is_array( $stored ) && ! empty( $stored ) ? $stored : array();
 
 		$stored[ $this->get_storage_key() ] = array(
-			'html'   => wp_kses( $this->html, faz_allowed_html() ),
-			'styles' => wp_kses(
+			'html'             => wp_kses( $this->html, faz_allowed_html() ),
+			'styles'           => wp_kses(
 				$this->styles,
 				faz_allowed_html()
 			),
+			'layout_signature' => $this->get_layout_signature(),
 		);
 		update_option(
 			$cache_key,
