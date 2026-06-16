@@ -1605,11 +1605,11 @@ class Frontend {
 			$services                    = $this->get_per_service_services( $valid_categories );
 			$store['_perServiceConsent'] = true;
 			$store['_services']         = $services;
-			// Per-cookie consent is a sub-mode of per-service: it nests an
-			// individual toggle under each service for every cookie the service
-			// declares. Only meaningful when per-service is on (the cookies are
-			// rendered beneath their service row), so it is gated on both flags.
-			$store['_perCookieConsent'] = ! empty( $settings['banner_control']['per_cookie_consent'] );
+			// Per-cookie consent remains gated until its rework is complete.
+			// New writes can no longer persist it as true (the settings
+			// sanitiser forces it false on the REST/import path), so this is a
+			// defensive runtime guard for a pre-gate legacy DB row only.
+			$store['_perCookieConsent'] = false;
 		}
 
 		/**

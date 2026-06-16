@@ -124,15 +124,16 @@ ref._fazSetInStore = function (key, value) {
     // limit silently DROPS the whole cookie write, corrupting even the core
     // category consent. So if the URL-encoded value would exceed the budget
     // we deterministically drop the lowest-priority entries — `ck.*` first,
-    // then `svc.*` — keeping every core/category entry. A dropped override
-    // simply falls back to its category-level consent on reload (the same
-    // contract the redundant-entry filter relies on).
+    // then service grants. Explicit service denials are fail-closed: when a
+    // denial cannot fit, the parent category is downgraded to "no" so a
+    // granular opt-out never becomes an allow after reload.
     const FAZ_COOKIE_VALUE_BUDGET = 3500; // encoded bytes; headroom under 4096
     const _fazEncodedLen = function (arr) {
         return encodeURIComponent(arr.join(",")).length;
     };
     if (_fazEncodedLen(cookieStringArray) > FAZ_COOKIE_VALUE_BUDGET) {
         const coreEntries = [];
+        const coreIndex = {};
         const svcDeniedEntries = [];
         const svcAllowedEntries = [];
         const ckEntries = [];
@@ -140,32 +141,94 @@ ref._fazSetInStore = function (key, value) {
             if (entry.indexOf("ck.") === 0) {
                 ckEntries.push(entry);
             } else if (entry.indexOf("svc.") === 0) {
+                const sep = entry.indexOf(":");
+                const svcId = sep > 4 ? entry.substring(4, sep) : "";
+                const svcEntry = {
+                    entry: entry,
+                    id: svcId,
+                    category: svcCatMap[svcId] || "",
+                };
                 if (/:no$/.test(entry)) {
-                    svcDeniedEntries.push(entry);
+                    svcDeniedEntries.push(svcEntry);
                 } else {
-                    svcAllowedEntries.push(entry);
+                    svcAllowedEntries.push(svcEntry);
                 }
             } else {
+                const sep = entry.indexOf(":");
+                if (sep > 0) {
+                    coreIndex[entry.substring(0, sep)] = coreEntries.length;
+                }
                 coreEntries.push(entry);
             }
         });
+        const downgradedCategories = {};
+        const setCoreEntry = function (coreKey, coreValue) {
+            const next = coreKey + ":" + coreValue;
+            if (Object.prototype.hasOwnProperty.call(coreIndex, coreKey)) {
+                coreEntries[coreIndex[coreKey]] = next;
+            } else {
+                coreIndex[coreKey] = coreEntries.length;
+                coreEntries.push(next);
+            }
+        };
+        const rebuildKept = function (serviceEntries) {
+            const rebuilt = coreEntries.slice();
+            serviceEntries.forEach(function (svcEntry) {
+                if (svcEntry.category && downgradedCategories[svcEntry.category] && /:no$/.test(svcEntry.entry)) return;
+                rebuilt.push(svcEntry.entry);
+            });
+            return rebuilt;
+        };
         // Core entries are always kept. Explicit service denials have the
-        // highest granular priority, followed by service allows. Per-cookie
-        // entries are considered only when every service decision fitted, so
-        // a shorter ck.* key can never displace a higher-priority svc.* key.
+        // highest granular priority, followed by service allows. If an explicit
+        // denial still cannot fit, fail closed by downgrading its category to
+        // "no"; this may block extra services, but it never turns a granular
+        // opt-out into an allow after reload.
         const kept = coreEntries.slice();
+        const keptServices = [];
         let dropped = 0;
         let serviceDropped = false;
-        [svcDeniedEntries, svcAllowedEntries].forEach(function (group) {
-            group.forEach(function (entry) {
-                kept.push(entry);
-                if (_fazEncodedLen(kept) > FAZ_COOKIE_VALUE_BUDGET) {
-                    kept.pop();
-                    dropped++;
-                    serviceDropped = true;
+        svcDeniedEntries.forEach(function (svcEntry) {
+            if (svcEntry.category && downgradedCategories[svcEntry.category]) return;
+            keptServices.push(svcEntry);
+            kept.push(svcEntry.entry);
+            if (_fazEncodedLen(kept) > FAZ_COOKIE_VALUE_BUDGET) {
+                kept.pop();
+                keptServices.pop();
+                dropped++;
+                serviceDropped = true;
+                if (svcEntry.category) {
+                    downgradedCategories[svcEntry.category] = true;
+                    setCoreEntry(svcEntry.category, "no");
+                    const rebuilt = rebuildKept(keptServices);
+                    kept.length = 0;
+                    rebuilt.forEach(function (entry) {
+                        kept.push(entry);
+                    });
                 }
-            });
+            }
         });
+        svcAllowedEntries.forEach(function (svcEntry) {
+            // Defence in depth: never emit an svc.<id>:yes for a category that
+            // was fail-closed to "no" in the denial pass above. The serializer
+            // cannot currently produce such an entry (a downgraded category was
+            // "yes" at serialize time, so its surviving overrides are all :no),
+            // but skipping it keeps the invariant explicit and robust against
+            // future changes to the divergence filter.
+            if (svcEntry.category && downgradedCategories[svcEntry.category]) return;
+            keptServices.push(svcEntry);
+            kept.push(svcEntry.entry);
+            if (_fazEncodedLen(kept) > FAZ_COOKIE_VALUE_BUDGET) {
+                kept.pop();
+                keptServices.pop();
+                dropped++;
+                serviceDropped = true;
+            }
+        });
+        // Per-cookie entries are considered only when every service decision
+        // fitted. serviceDropped is set whenever ANY svc.* entry (a denial OR
+        // an allow) overflowed the budget, so a shorter ck.* key can never
+        // displace a higher-priority svc.* key.
         if (!serviceDropped) {
             ckEntries.forEach(function (entry) {
                 kept.push(entry);
@@ -184,7 +247,7 @@ ref._fazSetInStore = function (key, value) {
                     " encoded bytes; dropped " +
                     dropped +
                     " per-service/per-cookie override(s) to avoid browser truncation. " +
-                    "The affected services fall back to their category-level consent."
+                    "Denied services that could not fit fail closed through category-level opt-out."
             );
         }
         cookieStringArray = kept;
@@ -1124,6 +1187,7 @@ async function _fazMaybeSwapLanguage() {
  */
 async function _fazInit() {
     try {
+        _fazRunDeadCookieCleanup();
         try {
             await _fazMaybeSwapLanguage();
         } finally {
@@ -1136,11 +1200,23 @@ async function _fazInit() {
             }
         }
         _fazInitOperations();
-        _fazRemoveAllDeadCookies();
+        _fazRunDeadCookieCleanup();
         _fazWatchBannerElement();
+        _fazScheduleDeadCookieCleanup();
     } catch (err) {
         console.error(err);
     }
+}
+
+function _fazRunDeadCookieCleanup() {
+    _fazRemoveAllDeadCookies();
+    _fazCleanupRevokedCookies();
+}
+
+function _fazScheduleDeadCookieCleanup() {
+    [250, 1000, 2000].forEach(function (delay) {
+        window.setTimeout(_fazRunDeadCookieCleanup, delay);
+    });
 }
 
 /**
@@ -2295,9 +2371,12 @@ function _fazCkKey(serviceId, cookieName) {
 function _fazStoreCustomServiceConsent(choice) {
     if (choice !== "custom") return;
     var togglesByCategory = {};
+    var seenServiceIds = {};
     document.querySelectorAll('.faz-service-toggle[data-service][data-category]').forEach(function(toggle) {
         var category = toggle.getAttribute('data-category');
+        var serviceId = toggle.getAttribute('data-service');
         if (!category) return;
+        if (serviceId) seenServiceIds[serviceId] = true;
         if (!togglesByCategory[category]) togglesByCategory[category] = [];
         togglesByCategory[category].push(toggle);
     });
@@ -2314,6 +2393,17 @@ function _fazStoreCustomServiceConsent(choice) {
             ref._fazSetInStore("svc." + serviceId, toggle.checked ? "yes" : "no");
         });
     });
+    if (_fazServicesBeforeConsent && Array.isArray(_fazStore._services)) {
+        _fazStore._services.forEach(function(service) {
+            if (!service || !service.id || !service.category || seenServiceIds[service.id]) return;
+            var prior = _fazServicesBeforeConsent[service.id];
+            if (prior !== "yes" && prior !== "no") return;
+            var catConsent = ref._fazGetFromStore(service.category) || "no";
+            if (prior !== catConsent) {
+                ref._fazSetInStore("svc." + service.id, prior);
+            }
+        });
+    }
 }
 
 /**
@@ -2328,6 +2418,21 @@ function _fazServiceEffectiveConsent(serviceId, category) {
     var svcConsent = ref._fazGetFromStore("svc." + serviceId);
     if (svcConsent) return svcConsent === "yes" ? "yes" : "no";
     return ref._fazGetFromStore(category) === "yes" ? "yes" : "no";
+}
+
+function _fazKnownServiceCategory(serviceId) {
+    if (!serviceId || !Array.isArray(_fazStore._services)) return "";
+    for (var i = 0; i < _fazStore._services.length; i++) {
+        var service = _fazStore._services[i];
+        if (service && service.id === serviceId && service.category) return service.category;
+    }
+    return "";
+}
+
+function _fazIsKnownService(serviceId, categorySlug) {
+    var serviceCategory = _fazKnownServiceCategory(serviceId);
+    if (!serviceCategory) return false;
+    return !categorySlug || serviceCategory === categorySlug;
 }
 
 function _fazGetServiceConsentSnapshot() {
@@ -2593,7 +2698,12 @@ document.createElement = (...args) => {
         if (name === "type" || name === "src")
             return (createdElement[name] = value);
         originalSetAttribute(name, value);
-        if (name === "data-fazcookie") {
+        // Re-evaluate the script type when EITHER the category tag or the
+        // per-service tag is set. A library may set `src` first (which already
+        // marks the script javascript/blocked) and only then set
+        // `data-faz-service`; without re-checking here an explicit svc.<id>:yes
+        // would never unblock that dynamically-created script.
+        if (name === "data-fazcookie" || name === "data-faz-service") {
             if (_fazShouldChangeType(createdElement)) {
                 rememberOriginalType();
                 originalSetAttribute("type", "javascript/blocked");
@@ -3196,7 +3306,7 @@ function _fazGetServiceConsentForTarget(formattedRE) {
 
 function _fazShouldBlockResource(category, target, serviceId) {
     if (_fazStore._perServiceConsent) {
-        if (serviceId) {
+        if (serviceId && _fazIsKnownService(serviceId, category)) {
             var explicit = ref._fazGetFromStore("svc." + serviceId);
             if (explicit === "no") return true;
             if (explicit === "yes") return false;
@@ -3246,6 +3356,26 @@ function _fazShouldChangeType(element, src) {
     if (element.classList && element.classList.contains('faz-skip')) return false;
     var url = src ? src : element.src;
     if (_fazIsUserWhitelisted(url)) return false;
+    // Per-service override wins for dynamically-created scripts too: an explicit
+    // svc.<id>:yes must unblock a script whose category is denied (and svc:no
+    // must block one whose category is allowed). Without this the dynamic
+    // document.createElement path ignored per-service choices.
+    var serviceId = element.getAttribute ? (element.getAttribute("data-faz-service") || "") : "";
+    var serviceCategory = element.getAttribute && element.hasAttribute("data-fazcookie")
+        ? element.getAttribute("data-fazcookie").replace("fazcookie-", "")
+        : "";
+    // When the category tag is not (yet) set on a dynamically-created element,
+    // resolve the service's catalogue category so the override is validated
+    // against the registered category — matching _fazShouldBlockResource's
+    // semantics — instead of letting an empty category short-circuit the check.
+    if (!serviceCategory && serviceId) {
+        serviceCategory = _fazKnownServiceCategory(serviceId);
+    }
+    if (_fazStore._perServiceConsent && serviceId && _fazIsKnownService(serviceId, serviceCategory)) {
+        var explicit = ref._fazGetFromStore("svc." + serviceId);
+        if (explicit === "no") return true;
+        if (explicit === "yes") return false;
+    }
     return (
         (element.hasAttribute("data-fazcookie") &&
             _fazIsCategoryToBeBlocked(
@@ -4079,11 +4209,6 @@ function _fazWatchBannerElement() {
     document.querySelector("body").addEventListener("click", function (event) {
         var btn = event.target.closest("[data-faz-accept]");
         if (!btn) return;
-        var service = btn.getAttribute("data-faz-accept-service");
-        if (service && typeof window._fazAcceptService === "function") {
-            window._fazAcceptService(service);
-            return;
-        }
         var cat = btn.getAttribute("data-faz-accept");
         var serviceId = btn.getAttribute("data-faz-accept-service");
         if (
@@ -4788,13 +4913,41 @@ function _fazSaveVendorConsent(choice) {
  * Accept one detected service without granting its entire category.
  */
 window._fazAcceptService = function (serviceId, categorySlug) {
+    if (!categorySlug) {
+        categorySlug = _fazKnownServiceCategory(serviceId);
+    }
+    // Is this a real per-service entry? If not (per-service off, or service not
+    // detected) fall back to accepting the category so the placeholder unblocks.
+    if (!_fazIsKnownService(serviceId, categorySlug)) {
+        if (categorySlug && typeof window._fazAcceptCategory === "function") {
+            window._fazAcceptCategory(categorySlug);
+        }
+        return;
+    }
+
     var serviceToggle = document.querySelector(
         '.faz-service-toggle[data-service="' + serviceId + '"][data-category="' + categorySlug + '"]'
     );
+    var syntheticToggle = null;
     if (!serviceToggle) {
-        window._fazAcceptCategory(categorySlug);
-        return;
+        // The preference center has not rendered this service's toggle (the embed
+        // was accepted from its placeholder before opening the panel). Drive the
+        // same svc.<id>:yes flow via a detached toggle so we grant the SERVICE,
+        // not the whole category.
+        syntheticToggle = document.createElement('input');
+        syntheticToggle.type = 'checkbox';
+        syntheticToggle.className = 'faz-service-toggle';
+        syntheticToggle.setAttribute('data-service', serviceId);
+        syntheticToggle.setAttribute('data-category', categorySlug);
+        syntheticToggle.style.display = 'none';
+        document.body.appendChild(syntheticToggle);
+        serviceToggle = syntheticToggle;
     }
+    var _fazCleanupSyntheticToggle = function () {
+        if (syntheticToggle && syntheticToggle.parentNode) {
+            syntheticToggle.parentNode.removeChild(syntheticToggle);
+        }
+    };
 
     _fazCategoriesBeforeConsent = [];
     var categories = _fazStore._categories || [];
@@ -4812,11 +4965,13 @@ window._fazAcceptService = function (serviceId, categorySlug) {
     if (_fazAcceptCookies("custom") === false) {
         serviceToggle.checked = previousChecked;
         serviceToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        _fazCleanupSyntheticToggle();
         _fazCategoriesBeforeConsent = null;
         _fazServicesBeforeConsent = null;
         return;
     }
 
+    _fazCleanupSyntheticToggle();
     _fazRemoveBanner();
     _fazHidePreferenceCenter();
     _fazAfterConsent();
@@ -4885,44 +5040,6 @@ window._fazAcceptCategory = function (categorySlug) {
     _fazServicesBeforeConsent = null;
 };
 
-/**
- * Grant consent to a SINGLE service (e.g. just "youtube"), not its whole
- * category (#134). Used by the content-blocker placeholder "Accept" button:
- * accepting an embedded YouTube video must enable YouTube only, leaving the
- * rest of the Marketing category blocked.
- *
- * Writes a per-service `svc.<id>:yes` override into the consent cookie and
- * unblocks that provider, without flipping the category to "yes". The category
- * stays whatever it was, so _fazShouldBlockProvider keeps blocking every other
- * provider in it. Falls back to nothing when no serviceId is given.
- *
- * @param {string} serviceId  Service identifier (e.g. "youtube").
- */
-window._fazAcceptService = function (serviceId) {
-    if (!serviceId) return;
-    // First user action — generate the consentid lazily (same rule as
-    // _fazAcceptCookies: no stable tracker before the visitor acts).
-    _fazSetConsentID();
-    // Record that the visitor acted so the banner is not re-shown, then store
-    // the per-service grant. _fazSetInStore serialises fazcookie-consent on each
-    // call, so this persists.
-    ref._fazSetInStore("action", "yes");
-    ref._fazSetInStore("svc." + serviceId, "yes");
-    // Keep any rendered service toggles for this service in sync.
-    document.querySelectorAll('.faz-service-toggle[data-service="' + serviceId + '"]')
-        .forEach(function (svcToggle) { svcToggle.checked = true; });
-    // Restore the now-consented provider's iframe/script; other providers in the
-    // same category remain blocked because their svc.<id> is unset and the
-    // category value is still "no".
-    _fazUnblock();
-    _fazFireEvent({ accepted: [], rejected: [], action: "custom", service: serviceId });
-    // Dismiss the banner/preference center, same as _fazAcceptCategory — a
-    // placeholder accept is an explicit consent action.
-    _fazRemoveBanner();
-    _fazHidePreferenceCenter();
-    _fazAfterConsent();
-};
-
 window.getFazConsent = function () {
     const cookieConsent = {
         activeLaw: "",
@@ -4979,7 +5096,10 @@ window.addEventListener('message', function(event) {
         // surface: the overall payload is still bounded (length cap above)
         // and written verbatim as a cookie value, not interpreted as HTML.
         var consent = event.data.consent;
-        if (typeof consent !== 'string' || consent.length > 2048) return;
+        // Bound the forwarded value to the same ceiling the consent cookie uses
+        // (FAZ_COOKIE_VALUE_BUDGET = 3500 encoded bytes); the old 2048 cap
+        // silently dropped valid choices carrying many svc.* / ck.* overrides.
+        if (typeof consent !== 'string' || encodeURIComponent(consent).length > 3500) return;
         if (!/^[A-Za-z0-9._:+/=\-]+(,[A-Za-z0-9._:+/=\-]+)*$/.test(consent)) return;
 
         // Require that the source user actually took a consent action (action:yes

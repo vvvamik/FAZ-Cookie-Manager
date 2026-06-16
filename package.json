@@ -9,6 +9,8 @@
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test -c tests/e2e/playwright.config.ts --headed",
     "test:e2e:report": "playwright show-report tests/e2e/reports/html",
+    "test:live": "playwright test -c tests/e2e/playwright.live.config.ts",
+    "test:live:report": "playwright show-report tests/e2e/reports/live-html",
     "test:unit": "bash scripts/run-unit-tests.sh"
   },
   "devDependencies": {

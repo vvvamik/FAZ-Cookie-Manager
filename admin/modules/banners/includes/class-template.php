@@ -148,6 +148,17 @@ class Template {
 		$language       = is_string( $language ) ? trim( sanitize_text_field( $language ) ) : '';
 		$this->language = '' !== $language ? $language : faz_current_language();
 		if ( $banner ) {
+			// Runtime compatibility migrations for banners saved before the
+			// CCPA Classic-guard / law-content-sync shipped: move a Classic (or
+			// Full-width + Pushdown) CCPA/Both banner to a popup-capable layout
+			// and re-sync the law-appropriate notice copy, so the Do-Not-Sell
+			// opt-out works on legacy rows without an admin re-save.
+			if ( is_callable( array( $banner, 'apply_runtime_layout_compatibility' ) ) ) {
+				$banner->apply_runtime_layout_compatibility();
+			}
+			if ( is_callable( array( $banner, 'apply_runtime_law_content_compatibility' ) ) ) {
+				$banner->apply_runtime_law_content_compatibility();
+			}
 			$this->banner     = $banner;
 			$this->properties = $banner->get_settings();
 			$this->load();
@@ -168,7 +179,11 @@ class Template {
 	 * @return void
 	 */
 	public function load() {
-		if ( true === $this->is_preview() || empty( $this->get_stored() ) ) {
+		$stored = $this->get_stored();
+		if ( true === $this->is_preview()
+			|| empty( $stored )
+			|| ! isset( $stored['layout_signature'] )
+			|| $this->get_layout_signature() !== $stored['layout_signature'] ) {
 			$this->generate();
 		} else {
 			$this->set_template();
@@ -642,11 +657,12 @@ class Template {
 		$stored    = is_array( $stored ) && ! empty( $stored ) ? $stored : array();
 
 		$stored[ $this->get_storage_key() ] = array(
-			'html'   => wp_kses( $this->html, faz_allowed_html() ),
-			'styles' => wp_kses(
+			'html'             => wp_kses( $this->html, faz_allowed_html() ),
+			'styles'           => wp_kses(
 				$this->styles,
 				faz_allowed_html()
 			),
+			'layout_signature' => $this->get_layout_signature(),
 		);
 		update_option(
 			$cache_key,
