@@ -3266,16 +3266,22 @@ class Frontend {
 			}
 		}
 
-		// 4. Developer filter (allows code-level custom rules).
-		$map = apply_filters( 'faz_blocking_rules', $map );
+		// 4. Developer filter (allows code-level custom rules). Snapshot the map
+		// first so a rule the filter ADDS is treated as explicit (like an admin
+		// custom rule) and is never silently exempted below.
+		$pre_filter_map = $map;
+		$map            = apply_filters( 'faz_blocking_rules', $map );
 
 		// 5. Remove always-allowed gateway patterns (e.g. Stripe on checkout) —
-		// but NEVER an explicit admin custom rule. Admin intent wins (section 3),
-		// and the gateway match is substring-based, so a generic custom pattern
-		// like "payment" must not be silently exempted just because it is a
-		// substring of "stripe-payment".
+		// but NEVER an explicit rule. Only the built-in provider patterns
+		// (sections 1-2) are subject to the gateway exemption; an admin custom
+		// rule (section 3) or a developer-filter-added rule (section 4) wins,
+		// since the gateway match is substring-based and a generic pattern like
+		// "payment" must not be silently exempted because it is a substring of
+		// "stripe-payment".
 		foreach ( array_keys( $map ) as $p ) {
-			if ( isset( $custom_patterns[ $p ] ) ) {
+			$is_explicit_rule = isset( $custom_patterns[ $p ] ) || ! array_key_exists( $p, $pre_filter_map );
+			if ( $is_explicit_rule ) {
 				continue;
 			}
 			if ( $this->is_always_allowed_gateway_pattern( $p ) ) {

@@ -489,9 +489,12 @@ test.describe('User-reported regressions (v1.11.0 publisher report)', () => {
 			// that GCM's *first* `consent default` call must already carry
 			// granted states for returning visitors.
 			await visitorPage.goto(`${WP_BASE}/`, { waitUntil: 'domcontentloaded' });
-			// Give gcm.js a tick to run its init.
+			// Give gcm.js a tick to run its init. Resolve the configured dataLayer
+			// name (same as the evaluate below) so a custom dataLayerName doesn't
+			// make the sentinel watch a different array than the one gcm.js writes.
 			await visitorPage.waitForFunction(() => {
-				const dl = (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
+				const dlName = (window as unknown as { fazSettings?: { dataLayerName?: string } }).fazSettings?.dataLayerName || 'dataLayer';
+				const dl = (window as unknown as Record<string, unknown[]>)[dlName] ?? [];
 				return (dl as Array<Record<number, unknown>>).some((e) => e && typeof e === 'object' && e[0] === 'consent');
 			}, undefined, { timeout: 5_000 });
 
