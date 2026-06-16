@@ -3302,10 +3302,6 @@ class Frontend {
 	 * @return string[] Unique cookie-name patterns to skip on shred/interceptor.
 	 */
 	private function compute_whitelisted_cookie_patterns( $user_whitelist, $valid_categories ) {
-		if ( empty( $user_whitelist ) ) {
-			return array();
-		}
-
 		$patterns = array();
 		$known    = Known_Providers::get_all();
 
@@ -3321,17 +3317,34 @@ class Frontend {
 			}
 
 			$service_whitelisted = false;
+
+			// Always-allowed payment gateways (Stripe, etc.): their scripts run
+			// pre-consent regardless of category, so the cookies they set must
+			// also be exempt from the cookie shredder — otherwise the startup
+			// cleanup deletes a live gateway cookie (e.g. __stripe_mid) the
+			// moment it is written. This applies even with no user whitelist.
 			foreach ( $service['patterns'] as $pattern ) {
-				foreach ( $user_whitelist as $allowed ) {
-					if ( '' === $allowed || strlen( $allowed ) < 3 ) {
-						continue;
-					}
-					if ( false !== stripos( $pattern, $allowed ) ) {
-						$service_whitelisted = true;
-						break 2;
+				if ( $this->is_always_allowed_gateway_pattern( $pattern ) ) {
+					$service_whitelisted = true;
+					break;
+				}
+			}
+
+			// Admin-configured whitelist patterns.
+			if ( ! $service_whitelisted && ! empty( $user_whitelist ) ) {
+				foreach ( $service['patterns'] as $pattern ) {
+					foreach ( $user_whitelist as $allowed ) {
+						if ( '' === $allowed || strlen( $allowed ) < 3 ) {
+							continue;
+						}
+						if ( false !== stripos( $pattern, $allowed ) ) {
+							$service_whitelisted = true;
+							break 2;
+						}
 					}
 				}
 			}
+
 			if ( ! $service_whitelisted ) {
 				continue;
 			}
