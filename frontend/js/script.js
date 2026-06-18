@@ -1167,19 +1167,23 @@ async function _fazMaybeSwapLanguage() {
     // wp_localize_script stringifies booleans: true becomes "1", false
     // becomes "". Treat the field as a truthy flag so the JS works with
     // whatever wire format ends up in the page.
-    if (!_fazStore || !_fazStore._browserDetect) return;
+    if (!_fazStore || !_fazStore._browserDetect) return false;
     var available = Array.isArray(_fazStore._availableLanguages) ? _fazStore._availableLanguages : [];
-    if (available.length < 2) return;
+    if (available.length < 2) return false;
     var langMap = (_fazStore._languageMap && typeof _fazStore._languageMap === 'object') ? _fazStore._languageMap : {};
     var detected = _fazResolveBrowserLanguage(available, langMap);
-    if (!detected || detected === _fazStore._language) return;
-    if (!_fazStore._bannerEndpoint) return;
+    if (!detected || detected === _fazStore._language) return false;
+    if (!_fazStore._bannerEndpoint) return false;
     try {
         var payload = await _fazFetchBannerForLanguage(_fazStore._bannerEndpoint, detected, 500);
-        if (payload) _fazApplyBannerPayload(payload);
+        if (payload) {
+            _fazApplyBannerPayload(payload);
+            return true; // caller re-renders the visible banner in the new language
+        }
     } catch (err) {
-        // Silent degrade: if the swap fails we just render the default.
+        // Silent degrade: if the swap fails we just keep the default language.
     }
+    return false;
 }
 
 /**
@@ -1188,21 +1192,35 @@ async function _fazMaybeSwapLanguage() {
 async function _fazInit() {
     try {
         _fazRunDeadCookieCleanup();
-        try {
-            await _fazMaybeSwapLanguage();
-        } finally {
-            // Deterministic marker so tests can wait for the client-side
-            // language-swap decision instead of sleeping on a fixed timeout.
-            // Settled regardless of outcome (no-op / swapped / failed) so
-            // callers never race an unresolved promise.
-            if (_fazStore && typeof _fazStore === 'object') {
-                _fazStore._swapResolved = true;
-            }
-        }
+        // Render and show the banner FIRST, from the server-rendered default-
+        // language template — first paint must never wait on a network round-
+        // trip. (Previously _fazInit awaited the language swap before rendering,
+        // so on multilingual sites with browser-detect on, any visitor whose
+        // browser language differed from the site language saw the banner only
+        // after a /faz/v1/banner/{lang} fetch settled — "appears late / not at
+        // all".)
         _fazInitOperations();
         _fazRunDeadCookieCleanup();
         _fazWatchBannerElement();
         _fazScheduleDeadCookieCleanup();
+        // Language swap is now a progressive enhancement applied AFTER paint, and
+        // only when the first-visit banner is actually on screen. Returning / GPC
+        // visitors have no visible banner to re-localize, so they skip the fetch
+        // entirely.
+        try {
+            var _fazBannerEl = _fazGetBanner();
+            if (_fazBannerEl && !_fazBannerEl.classList.contains('faz-hide')) {
+                if (await _fazMaybeSwapLanguage()) {
+                    _fazReRenderVisibleBanner();
+                }
+            }
+        } finally {
+            // Deterministic marker so tests can wait for the client-side
+            // language-swap decision instead of sleeping on a fixed timeout.
+            if (_fazStore && typeof _fazStore === 'object') {
+                _fazStore._swapResolved = true;
+            }
+        }
     } catch (err) {
         console.error(err);
     }
@@ -1475,6 +1493,31 @@ function _fazHideBanner() {
     }
 }
 var _fazBannerLoadedFired = false;
+// Top-level nodes _fazRenderBanner() inserted, so a language swap can remove
+// and rebuild exactly the banner without orphaning or duplicating it.
+var _fazRenderedNodes = [];
+
+/**
+ * Rebuild the on-screen banner after a successful language swap, without
+ * blocking first paint. Only called when the first-visit banner is already
+ * visible (returning/GPC visitors have no banner to re-localize). Removes the
+ * previously-inserted template nodes, re-renders from the swapped template and
+ * re-applies the shown state. Banner-external listeners (shortcode triggers,
+ * the delegated _fazWatchBannerElement body listener) are untouched — they bind
+ * to nodes outside _fazRenderedNodes — so nothing double-binds.
+ */
+function _fazReRenderVisibleBanner() {
+    if (Array.isArray(_fazRenderedNodes)) {
+        _fazRenderedNodes.forEach(function (n) {
+            if (n && n.parentNode) n.parentNode.removeChild(n);
+        });
+    }
+    _fazRenderedNodes = [];
+    _fazRenderBanner();
+    _fazShowBanner();
+    _fazSetInitialState();
+}
+
 function _fazShowBanner() {
     const notice = _fazGetBanner();
     if (notice) {
@@ -1932,6 +1975,10 @@ function _fazRenderBanner() {
     while (doc.body.firstChild) {
         fragment.appendChild(doc.body.firstChild);
     }
+    // Track exactly the nodes we insert so a later language swap can remove this
+    // banner and rebuild it in the detected language without leaving orphans or
+    // duplicating the preference center. See _fazReRenderVisibleBanner().
+    _fazRenderedNodes = Array.prototype.slice.call(fragment.childNodes);
     document.body.insertBefore(fragment, document.body.firstChild);
     if (_fazGetPtype() === 'pushdown' && _fazGetType() !== 'box') _fazToggleAriaExpandStatus("=settings-button", "false");
     // Run each decoration helper in isolation: the banner template is already
