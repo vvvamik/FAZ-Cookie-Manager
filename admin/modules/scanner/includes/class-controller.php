@@ -324,6 +324,7 @@ class Controller {
 		$logger->start( 'Server-side scan (run_scan)' );
 
 		try {
+			$this->scanned_embed_urls = array();
 			$logger->log( 'Max pages: ' . $max_pages );
 
 			$site_url = home_url( '/' );
@@ -1134,14 +1135,6 @@ class Controller {
 	}
 
 	/**
-	 * Match a cookie name against Known Providers' cookie map.
-	 *
-	 * Supports exact match and wildcard patterns (e.g. '_ga_*').
-	 *
-	 * @param string $name Cookie name.
-	 * @return string|false Category slug or false.
-	 */
-	/**
 	 * Extract embeddable provider URLs (<script src> / <iframe src>) from HTML.
 	 *
 	 * Feeds infer_cookies_from_scripts() so a provider present only as an embed
@@ -1222,6 +1215,14 @@ class Controller {
 		return $inferred;
 	}
 
+	/**
+	 * Match a cookie name against Known Providers' cookie map.
+	 *
+	 * Supports exact match and wildcard patterns (e.g. '_ga_*').
+	 *
+	 * @param string $name Cookie name.
+	 * @return string|false Category slug or false.
+	 */
 	private function match_cookie_to_provider( $name ) {
 		$cookie_map = \FazCookie\Includes\Known_Providers::get_cookie_map();
 		foreach ( $cookie_map as $pattern => $category ) {
