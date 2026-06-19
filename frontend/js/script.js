@@ -1539,15 +1539,38 @@ var _fazRenderedNodes = [];
  * to nodes outside _fazRenderedNodes — so nothing double-binds.
  */
 function _fazReRenderVisibleBanner() {
-    if (Array.isArray(_fazRenderedNodes)) {
-        _fazRenderedNodes.forEach(function (n) {
-            if (n && n.parentNode) n.parentNode.removeChild(n);
-        });
-    }
-    _fazRenderedNodes = [];
+    // Build-the-new-before-removing-the-old, so the first layer never has a
+    // window with no banner (and no reject control) on screen. The previous
+    // remove-then-render order detached the live banner before the rebuilt one
+    // existed; on browser-detect multilingual sites this produced a visible
+    // language flicker and momentarily dropped the reject button — observable as
+    // a flake in the live compliance suite (COMP-03/COMP-04). #134/#146 (F013).
+    var oldNodes = Array.isArray(_fazRenderedNodes) ? _fazRenderedNodes.slice() : [];
+    // Strip ids from the outgoing nodes so the rebuild's id-based decoration
+    // selectors (`#fazBannerTemplate`, `#fazDetailCategory…`, etc.) bind to the
+    // NEW banner only — no duplicate-id ambiguity while both are briefly in the
+    // DOM. The old nodes stay matchable by their data-faz-tag attributes, but
+    // the new banner is inserted at body-top so a `.first()` query resolves to
+    // it. data-faz-tag controls (accept/reject) are intentionally preserved.
+    oldNodes.forEach(function (n) {
+        if (n && n.nodeType === 1) {
+            if (n.id) n.removeAttribute('id');
+            if (n.querySelectorAll) {
+                n.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id'); });
+            }
+        }
+    });
+    // _fazRenderBanner() inserts the rebuilt banner at body-top and resets
+    // _fazRenderedNodes to the new nodes.
     _fazRenderBanner();
     _fazShowBanner();
     _fazSetInitialState();
+    // New banner is fully in place; drop the previous-language nodes. This whole
+    // function is synchronous, so the browser never paints the transient
+    // two-banner state — the swap reads as a single in-place re-localization.
+    oldNodes.forEach(function (n) {
+        if (n && n.parentNode) n.parentNode.removeChild(n);
+    });
 }
 
 function _fazShowBanner() {
