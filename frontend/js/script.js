@@ -2820,8 +2820,7 @@ document.createElement = (...args) => {
                     rememberOriginalType();
                     originalSetAttribute("type", "javascript/blocked");
                 } else if (createdElement.getAttribute("data-faz-blocked-by-us")) {
-                    // Restore only a type WE clobbered (marked by
-                    // data-faz-original-type), not one a third party set.
+                    // Restore only if WE blocked it (data-faz-blocked-by-us set by rememberOriginalType).
                     restoreOriginalType();
                 }
                 originalSetAttribute("src", value);
@@ -2865,11 +2864,7 @@ document.createElement = (...args) => {
                 rememberOriginalType();
                 originalSetAttribute("type", "javascript/blocked");
             } else if (createdElement.getAttribute("data-faz-blocked-by-us")) {
-                // Only restore when WE blocked it — rememberOriginalType() sets
-                // data-faz-original-type, so its presence is the reliable marker
-                // that this interceptor clobbered the type. Never downgrade a
-                // script that was javascript/blocked by a third party, nor a
-                // legitimate type="module" we never touched.
+                // Restore only if WE blocked it (data-faz-blocked-by-us set by rememberOriginalType).
                 restoreOriginalType();
             }
         }
