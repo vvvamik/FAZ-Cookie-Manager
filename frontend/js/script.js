@@ -2426,7 +2426,19 @@ function _fazAcceptCookies(choice = "all") {
 
     // Clean up only after granular choices have been persisted, so an
     // explicitly allowed service inside a denied category keeps its cookies.
-    rejectedCategoryObjects.forEach(_fazRemoveDeadCookies);
+    // In granular mode (per-service/per-cookie), a cookie or service can be
+    // denied INSIDE a category the visitor accepted — those accepted categories
+    // are absent from rejectedCategoryObjects, so sweeping only the rejected set
+    // would leave the just-denied cookie in place until the next request's
+    // server shred. Sweep EVERY category instead: _fazRemoveDeadCookies keeps
+    // only cookies whose effective decision is "yes" (ck.* > svc.* > category),
+    // so accepted cookies survive and explicit denies are shredded immediately
+    // on save. #135 / #134/#146.
+    if (_fazStore._perCookieConsent || _fazStore._perServiceConsent) {
+        (_fazStore._categories || []).forEach(_fazRemoveDeadCookies);
+    } else {
+        rejectedCategoryObjects.forEach(_fazRemoveDeadCookies);
+    }
 
     // Handle IAB vendor consent.
     _fazSaveVendorConsent(choice);
