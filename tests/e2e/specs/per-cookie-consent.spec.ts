@@ -89,7 +89,21 @@ test.describe('Per-cookie consent (issue #135)', () => {
 
     // enable a category that has cookies; the cascade checks nested cookies
     const picked = await fp.evaluate(() => {
-      const ck = document.querySelector('.faz-cookie-toggle');
+      // Pick the first per-cookie toggle whose cookie is actually SHREDDABLE.
+      // Always-allowed / user-whitelisted cookies (e.g. the Stripe payment
+      // gateway's __stripe_mid) are exempt from shredding by design — removing
+      // them would break payment flows — so a per-cookie denial on one can
+      // never satisfy the "denied cookie is shredded on save" assertion below.
+      // Test environments that expose a gateway service render its toggle
+      // first, so an unfiltered querySelector would pick the one cookie the
+      // shredder must NOT touch.
+      const toggles = Array.from(document.querySelectorAll('.faz-cookie-toggle'));
+      const isWhitelisted = (window as unknown as { _fazIsCookieWhitelisted?: (n: string) => boolean })._fazIsCookieWhitelisted;
+      const ck =
+        toggles.find((el) => {
+          const nm = el.getAttribute('data-cookie-name') || '';
+          return nm && !(typeof isWhitelisted === 'function' && isWhitelisted(nm));
+        }) || toggles[0];
       if (!ck) return null;
       const cat = ck.getAttribute('data-category') || '';
       const svc = ck.getAttribute('data-service') || '';
