@@ -1284,11 +1284,12 @@ class Frontend {
 
 			$service_id          = sanitize_key( $id );
 			$services[]          = array(
-				'id'       => $service_id,
-				'label'    => sanitize_text_field( $service['label'] ),
-				'category' => sanitize_key( $service['category'] ),
-				'patterns' => array_values( array_filter( array_map( 'sanitize_text_field', $service['patterns'] ) ) ),
-				'cookies'  => $service_cookies,
+				'id'          => $service_id,
+				'label'       => sanitize_text_field( $service['label'] ),
+				'category'    => sanitize_key( $service['category'] ),
+				'patterns'    => array_values( array_filter( array_map( 'sanitize_text_field', $service['patterns'] ) ) ),
+				'cookies'     => $service_cookies,
+				'third_party' => $this->is_third_party_service( $service_id ),
 			);
 			$seen[ $service_id ] = true;
 		}
@@ -1392,12 +1393,14 @@ class Frontend {
 			if ( 'necessary' === $service['category'] || ! in_array( $service['category'], $valid_categories, true ) ) {
 				continue;
 			}
-			$services[] = array(
-				'id'       => sanitize_key( $id ),
-				'label'    => sanitize_text_field( $service['label'] ),
-				'category' => sanitize_key( $service['category'] ),
-				'patterns' => array_values( array_filter( array_map( 'sanitize_text_field', $service['patterns'] ) ) ),
-				'cookies'  => ! empty( $service['cookies'] ) ? array_map( 'sanitize_text_field', $service['cookies'] ) : array(),
+			$enforceable_id = sanitize_key( $id );
+			$services[]     = array(
+				'id'          => $enforceable_id,
+				'label'       => sanitize_text_field( $service['label'] ),
+				'category'    => sanitize_key( $service['category'] ),
+				'patterns'    => array_values( array_filter( array_map( 'sanitize_text_field', $service['patterns'] ) ) ),
+				'cookies'     => ! empty( $service['cookies'] ) ? array_map( 'sanitize_text_field', $service['cookies'] ) : array(),
+				'third_party' => $this->is_third_party_service( $enforceable_id ),
 			);
 		}
 		/**
@@ -1435,13 +1438,34 @@ class Frontend {
 				continue;
 			}
 			$catalogue[ $svc['id'] ] = array(
-				'id'       => $svc['id'],
-				'label'    => isset( $svc['label'] ) ? $svc['label'] : $svc['id'],
-				'category' => isset( $svc['category'] ) ? $svc['category'] : '',
-				'cookies'  => isset( $svc['cookies'] ) ? array_values( (array) $svc['cookies'] ) : array(),
+				'id'          => $svc['id'],
+				'label'       => isset( $svc['label'] ) ? $svc['label'] : $svc['id'],
+				'category'    => isset( $svc['category'] ) ? $svc['category'] : '',
+				'cookies'     => isset( $svc['cookies'] ) ? array_values( (array) $svc['cookies'] ) : array(),
+				// Carried so the client-side reveal (which builds _services entries
+				// from this catalogue) can flag embed services whose third-party
+				// cookies the first-party shredder can't delete. #134/#146.
+				'third_party' => ! empty( $svc['third_party'] ),
 			);
 		}
 		return $catalogue;
+	}
+
+	/**
+	 * Whether a service id is an embedded third-party widget whose cookies the
+	 * first-party shredder cannot delete (so per-cookie enforcement is by
+	 * blocking the embed, not by removing individual cookies).
+	 *
+	 * Guarded with class_exists() so the lookup degrades to false — never a
+	 * fatal — if the Placeholder_Builder class is unavailable for any reason on
+	 * a given install; under the normal autoloader it resolves and loads.
+	 *
+	 * @param string $service_id Sanitised service identifier.
+	 * @return bool
+	 */
+	private function is_third_party_service( $service_id ) {
+		return class_exists( Placeholder_Builder::class )
+			&& Placeholder_Builder::is_embed_service( $service_id );
 	}
 
 	/**
@@ -1531,6 +1555,7 @@ class Frontend {
 				'cookies'                               => __( 'Cookies', 'faz-cookie-manager' ),
 				'cookie_consent_label'                  => __( 'Cookie consent', 'faz-cookie-manager' ),
 				'vendor_consent_label'                  => __( 'Vendor consent', 'faz-cookie-manager' ),
+				'third_party_cookie_note'               => __( 'These cookies are set by the embedded service on its own domain and are controlled by allowing or blocking the embed above — they cannot be removed individually.', 'faz-cookie-manager' ),
 			),
 			'_rtl'          => $this->is_rtl(),
 			'_language'     => faz_current_language(),

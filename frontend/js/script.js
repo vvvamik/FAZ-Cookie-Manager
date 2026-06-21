@@ -4960,6 +4960,23 @@ function _fazBuildServiceRow(service, serviceList) {
         cookieList.className = 'faz-cookie-list';
         cookieList.setAttribute('data-faz-service', service.id);
 
+        // Embedded third-party widgets (YouTube, Vimeo, Maps, social…) set their
+        // cookies on the EMBED's own domain, which the first-party shredder
+        // (document.cookie on this site's root domain) can never delete. Their
+        // per-cookie toggles are therefore enforced by allowing/blocking the
+        // whole embed, not by deleting individual cookies — say so rather than
+        // implying a granular control the browser's same-origin rules forbid.
+        if (service.third_party) {
+            var ckNote = document.createElement('p');
+            ckNote.className = 'faz-cookie-list-note';
+            ckNote.setAttribute('data-faz-service', service.id);
+            ckNote.textContent = _fazTranslate(
+                'third_party_cookie_note',
+                'These cookies are set by the embedded service on its own domain and are controlled by allowing or blocking the embed above — they cannot be removed individually.'
+            );
+            cookieList.appendChild(ckNote);
+        }
+
         service.cookies.forEach(function(cookieName, idx) {
             var cRow = document.createElement('div');
             cRow.classList.add('faz-cookie-row');
@@ -5032,7 +5049,8 @@ function _fazRevealService(serviceId) {
         id: entry.id,
         label: entry.label || entry.id,
         category: entry.category,
-        cookies: Array.isArray(entry.cookies) ? entry.cookies.slice() : []
+        cookies: Array.isArray(entry.cookies) ? entry.cookies.slice() : [],
+        third_party: !!entry.third_party
     };
     _fazStore._services.push(service);
     _fazInjectServiceToggle(service);
@@ -5115,7 +5133,8 @@ function _fazSyncPresentServicesData() {
             id: entry.id,
             label: entry.label || entry.id,
             category: entry.category,
-            cookies: Array.isArray(entry.cookies) ? entry.cookies.slice() : []
+            cookies: Array.isArray(entry.cookies) ? entry.cookies.slice() : [],
+            third_party: !!entry.third_party
         });
     }
 
@@ -5181,6 +5200,7 @@ function _fazInjectCookieToggleStyles() {
     style.id = 'faz-cookie-toggle-styles';
     style.textContent =
         '.faz-cookie-list{margin:2px 0 8px 14px;padding-left:10px;border-left:1px solid rgba(0,0,0,.08);}' +
+        '.faz-cookie-list-note{margin:2px 0 6px;font-size:11px;line-height:1.4;color:#888;font-style:italic;}' +
         '.faz-cookie-row{display:flex;align-items:center;justify-content:space-between;padding:2px 0;}' +
         '.faz-cookie-row-label{font-size:12px;color:#666;word-break:break-all;padding-right:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}' +
         '.faz-cookie-row .faz-switch{flex-shrink:0;transform:scale(.82);transform-origin:right center;}';

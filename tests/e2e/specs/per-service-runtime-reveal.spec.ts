@@ -219,6 +219,11 @@ test.describe('Per-service runtime reveal on block-first sites (#134/#146)', () 
     await expect(liveRegion).toHaveCount(1);
     await expect(liveRegion.locator('.faz-service-toggle[data-service="dailymotion"]')).toHaveCount(1);
 
+    // Third-party embed: the per-cookie list carries the clarifying note (its
+    // cookies live on the embed's domain, so they can't be shredded individually
+    // — only the service-level block enforces).
+    await expect(page.locator('.faz-cookie-list-note[data-faz-service="dailymotion"]')).toHaveCount(1);
+
     // The blocked iframe is neutralised (enforcement still works).
     expect(await page.locator('iframe[src*="dailymotion.com"]').count()).toBe(0);
 

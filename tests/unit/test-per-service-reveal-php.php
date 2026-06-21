@@ -89,6 +89,9 @@ namespace {
 	}
 	$GLOBALS['wpdb'] = new FazTest_WPDB();
 
+	// Load the real Placeholder_Builder so is_third_party_service() resolves it
+	// (the class_exists guard would otherwise degrade the flag to false).
+	require_once dirname( __DIR__, 2 ) . '/frontend/includes/class-placeholder-builder.php';
 	require_once dirname( __DIR__, 2 ) . '/frontend/class-frontend.php';
 	use FazCookie\Frontend\Frontend;
 
@@ -151,6 +154,16 @@ namespace {
 	$enf_ids = array_column( $enforceable, 'id' );
 	tt( in_array( 'youtube', $enf_ids, true ),
 		'YouTube IS in the ENFORCEABLE set (so svc.youtube can be enforced) — the visible/enforceable divergence is the root cause' );
+
+	// third_party flag: YouTube is an embed (cookies on youtube.com, not
+	// shreddable first-party) → flagged so the per-cookie note can clarify it;
+	// Google Analytics sets _ga first-party on the site domain → not flagged.
+	$enf_by_id = array();
+	foreach ( $enforceable as $e ) { $enf_by_id[ $e['id'] ] = $e; }
+	eq( $enf_by_id['youtube']['third_party'] ?? null, true, 'YouTube entry carries third_party=true (embed, cookies not shreddable)' );
+	$ga_visible = null;
+	foreach ( $visible as $v ) { if ( 'google-analytics' === $v['id'] ) { $ga_visible = $v; } }
+	eq( $ga_visible['third_party'] ?? null, false, 'first-party Google Analytics entry carries third_party=false' );
 
 	echo "\n-- FIX: an ACCEPTED service stays in the visible list for revocation --\n";
 	// After accept there is no blocked placeholder on the page AND still no

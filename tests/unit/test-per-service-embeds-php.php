@@ -231,7 +231,7 @@ namespace {
 			$yt = $e;
 		}
 	}
-	assert_eq( is_array( $yt ) && array_keys( $yt ) === array( 'id', 'label', 'category', 'patterns', 'cookies' ), true, 'A5 enforceable entry is shaped {id,label,category,patterns,cookies}' );
+	assert_eq( is_array( $yt ) && array_keys( $yt ) === array( 'id', 'label', 'category', 'patterns', 'cookies', 'third_party' ), true, 'A5 enforceable entry is shaped {id,label,category,patterns,cookies,third_party}' );
 	assert_eq( $yt['category'], 'marketing', 'A6 enforceable entry carries the provider category' );
 	assert_eq( in_array( 'youtube.com/embed', $yt['patterns'], true ), true, 'A7 enforceable entry carries the provider URL patterns (used to match embeds)' );
 
@@ -313,7 +313,7 @@ namespace {
 
 	// Presentation shape: {id,label,category,cookies} — NO patterns (those are
 	// enforcement detail the client resolves via _providersToBlock instead).
-	assert_eq( array_keys( $cat['youtube'] ), array( 'id', 'label', 'category', 'cookies' ), 'D6 catalogue entry is shaped {id,label,category,cookies}' );
+	assert_eq( array_keys( $cat['youtube'] ), array( 'id', 'label', 'category', 'cookies', 'third_party' ), 'D6 catalogue entry is shaped {id,label,category,cookies,third_party}' );
 	assert_eq( $cat['youtube']['id'], 'youtube', 'D7 catalogue is keyed by, and carries, the service id' );
 	assert_eq( $cat['youtube']['category'], 'marketing', 'D8 catalogue entry carries the provider category' );
 	assert_eq( $cat['youtube']['label'], 'YouTube', 'D9 catalogue entry carries the human label' );
