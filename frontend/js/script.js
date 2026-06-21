@@ -5722,19 +5722,39 @@ function _fazExtractLightboxUrl(el) {
 // modal-open BEFORE that iframe ever exists.
 function _fazIsKnownVideoUrl(url) {
     if (!url || typeof url !== 'string') return false;
-    var hosts = [
-        'youtube.com', 'www.youtube.com', 'youtu.be',
-        'youtube-nocookie.com', 'www.youtube-nocookie.com',
-        'vimeo.com', 'www.vimeo.com', 'player.vimeo.com',
-        'dailymotion.com', 'www.dailymotion.com', 'dai.ly',
-        'wistia.com', 'fast.wistia.net', 'fast.wistia.com',
-        'twitch.tv', 'www.twitch.tv', 'player.twitch.tv',
-    ];
     try {
         var u = new URL(url, window.location.href);
-        return hosts.indexOf(u.hostname) !== -1;
+        return _FAZ_VIDEO_HOST_SERVICE.hasOwnProperty(u.hostname);
     } catch (_e) {
-        return hosts.some(function (h) { return url.indexOf(h) !== -1; });
+        return Object.keys(_FAZ_VIDEO_HOST_SERVICE).some(function (h) { return url.indexOf(h) !== -1; });
+    }
+}
+
+// Map a video HOST to its per-service id. The lightbox link carries a WATCH-
+// style URL (youtube.com/watch?v=…, youtu.be/<id>, vimeo.com/<id>) that the
+// _providersToBlock patterns (which target the EMBED URL) don't match, so the
+// per-service reveal needs a host fallback to resolve the provider — mirroring
+// why _fazIsKnownVideoUrl matches by host, not path. #134/#146.
+var _FAZ_VIDEO_HOST_SERVICE = {
+    'youtube.com': 'youtube', 'www.youtube.com': 'youtube', 'youtu.be': 'youtube',
+    'youtube-nocookie.com': 'youtube', 'www.youtube-nocookie.com': 'youtube',
+    'vimeo.com': 'vimeo', 'www.vimeo.com': 'vimeo', 'player.vimeo.com': 'vimeo',
+    'dailymotion.com': 'dailymotion', 'www.dailymotion.com': 'dailymotion', 'dai.ly': 'dailymotion',
+    'wistia.com': 'wistia', 'fast.wistia.net': 'wistia', 'fast.wistia.com': 'wistia',
+    'twitch.tv': 'twitch', 'www.twitch.tv': 'twitch', 'player.twitch.tv': 'twitch',
+};
+
+// Resolve the per-service id of a lightbox video link: try the pattern-based
+// resolver first (covers youtu.be / player.vimeo.com whose host IS a pattern),
+// then fall back to the host map for WATCH-style URLs. Returns "" if unknown.
+function _fazResolveLightboxServiceId(blockingTarget, rawUrl) {
+    var byPattern = _fazResolveServiceId(blockingTarget, '');
+    if (byPattern) return byPattern;
+    try {
+        var u = new URL(rawUrl, window.location.href);
+        return _FAZ_VIDEO_HOST_SERVICE[u.hostname] || '';
+    } catch (_e) {
+        return '';
     }
 }
 
@@ -5791,6 +5811,21 @@ document.addEventListener('click', function (event) {
     if (!match.el.dataset.fazLightboxIntercepted) {
         match.el.dataset.fazLightboxIntercepted = '1';
         match.el.setAttribute('data-faz-src', match.url);
+        // Reveal the per-service toggle for the provider behind this lightbox,
+        // the same way blocked iframes/placeholders do. Without this, a video
+        // opened only via a page-builder lightbox link (youtube.com/watch?…)
+        // is blocked but never surfaces its toggle in the preference center.
+        // Mark the link with data-faz-service / data-faz-category too, so
+        // _fazSyncPresentServicesData also picks it up on a later render. #134/#146.
+        var lightboxSvc = _fazResolveLightboxServiceId(blockingTarget, match.url);
+        if (lightboxSvc) {
+            match.el.setAttribute('data-faz-service', lightboxSvc);
+            var lightboxCat = (_fazStore._serviceCatalogue
+                && _fazStore._serviceCatalogue[lightboxSvc]
+                && _fazStore._serviceCatalogue[lightboxSvc].category) || 'marketing';
+            match.el.setAttribute('data-faz-category', lightboxCat);
+            _fazRevealService(lightboxSvc);
+        }
         // Best-effort visual hint: surface the standard placeholder
         // INSIDE the link so the user sees the consent CTA. The
         // existing CSS floor (`min-height: 200px`,

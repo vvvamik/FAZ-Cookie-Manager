@@ -77,6 +77,8 @@ test.describe('Per-service runtime reveal on block-first sites (#134/#146)', () 
   let staticPostId = '';
   let lazyUrl = '';
   let lazyPostId = '';
+  let lightboxUrl = '';
+  let lightboxPostId = '';
 
   test.beforeAll(async ({ browser, loginAsAdmin }) => {
     const page = await browser.newPage();
@@ -111,11 +113,23 @@ test.describe('Per-service runtime reveal on block-first sites (#134/#146)', () 
       '--porcelain',
     ]).replace(/\D/g, '');
     lazyUrl = wp(['post', 'get', lazyPostId, '--field=url']);
+
+    // A page-builder LIGHTBOX link: the URL is a WATCH-style href (not an embed
+    // iframe), opened in a modal on click. The provider must still reveal its
+    // toggle. Divi's .et_pb_lightbox_video reads the href as the video URL.
+    lightboxPostId = wp([
+      'post', 'create', '--post_type=page', '--post_status=publish',
+      '--post_title=FAZ E2E reveal lightbox',
+      '--post_content=<a class="et_pb_lightbox_video" href="https://www.dailymotion.com/video/x7tgad0">Play video</a>',
+      '--porcelain',
+    ]).replace(/\D/g, '');
+    lightboxUrl = wp(['post', 'get', lightboxPostId, '--field=url']);
   });
 
   test.afterAll(async ({ browser, loginAsAdmin }) => {
     if (staticPostId) wp(['post', 'delete', staticPostId, '--force']);
     if (lazyPostId) wp(['post', 'delete', lazyPostId, '--force']);
+    if (lightboxPostId) wp(['post', 'delete', lightboxPostId, '--force']);
     if (!original?.banner_control) return;
     const page = await browser.newPage();
     await loginAsAdmin(page);
@@ -278,6 +292,52 @@ test.describe('Per-service runtime reveal on block-first sites (#134/#146)', () 
     const toggle = page.locator('.faz-service-toggle[data-service="dailymotion"]');
     await expect(toggle).toHaveCount(1);
     expect(await toggle.getAttribute('data-category')).toBe('marketing');
+
+    await ctx.close();
+  });
+
+  test('page-builder lightbox link (watch URL) reveals its toggle on click', async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await page.goto(lightboxUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.classList.contains('faz-ready'), { timeout: 8000 });
+
+    // Not embedded as an iframe — only a lightbox <a> with a watch-style href —
+    // so it's absent until the visitor clicks to open the modal.
+    expect(
+      await page.evaluate(() => {
+        const s = (window as unknown as { _fazConfig?: { _services?: Array<{ id?: string }> } })._fazConfig?._services;
+        return Array.isArray(s) ? s.some((x) => x && x.id === 'dailymotion') : false;
+      }),
+      'Dailymotion is absent before the lightbox link is clicked',
+    ).toBe(false);
+
+    // Dispatch the click directly on the link: the capture-phase document
+    // interceptor receives it with target=link regardless of the consent
+    // overlay's hit-test (a real .click() races the banner overlay at first
+    // visit). The interceptor blocks the modal, marks the element, and reveals
+    // the provider's toggle.
+    await page.evaluate(() => {
+      const link = document.querySelector('a.et_pb_lightbox_video');
+      if (link) link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const s = (window as unknown as { _fazConfig?: { _services?: Array<{ id?: string }> } })._fazConfig?._services;
+            return Array.isArray(s) ? s.some((x) => x && x.id === 'dailymotion') : false;
+          }),
+        { timeout: 8000 },
+      )
+      .toBe(true);
+
+    // The link itself is marked service-aware, so a later sync also picks it up.
+    expect(await page.locator('a.et_pb_lightbox_video[data-faz-service="dailymotion"]').count()).toBe(1);
+
+    await openPreferenceCenter(page);
+    await expect(page.locator('.faz-service-toggle[data-service="dailymotion"]')).toHaveCount(1);
 
     await ctx.close();
   });
