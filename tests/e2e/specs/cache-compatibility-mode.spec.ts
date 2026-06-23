@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/wp-fixture';
 import type { Page } from '@playwright/test';
-import { upsertPage } from '../utils/wp-env';
+import { upsertPage, wp } from '../utils/wp-env';
 
 /**
  * Cache Compatibility Mode (issue #158) — end-to-end header behaviour.
@@ -82,6 +82,7 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
   let nonce = '';
   let originalBannerControl: Record<string, unknown> = {};
   let originalIab: Record<string, unknown> = {};
+  let fixtureId = 0;
 
   async function applyState(opts: { cacheCompat: boolean; iab: boolean }): Promise<void> {
     await postSettings(admin, nonce, {
@@ -91,7 +92,7 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
   }
 
   test.beforeAll(async ({ browser, loginAsAdmin }) => {
-    upsertPage(
+    fixtureId = upsertPage(
       CACHE_FIXTURE_SLUG,
       'FAZ Cache Compatibility Provider',
       '<p>FAZ cache compatibility provider fixture.</p><script src="https://www.googletagmanager.com/gtag/js?id=G-FAZCACHE"></script>'
@@ -110,6 +111,13 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
   test.afterAll(async () => {
     if (nonce) {
       await postSettings(admin, nonce, { banner_control: originalBannerControl, iab: originalIab });
+    }
+    if (fixtureId) {
+      try {
+        wp(['post', 'delete', String(fixtureId), '--force']);
+      } catch {
+        /* best-effort cleanup */
+      }
     }
     await admin.close();
   });
