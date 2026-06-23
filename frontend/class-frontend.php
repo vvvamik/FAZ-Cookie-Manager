@@ -866,7 +866,19 @@ class Frontend {
 	 * @return bool
 	 */
 	private function is_country_dependent_output() {
-		$settings  = $this->get_faz_settings();
+		$settings = $this->get_faz_settings();
+
+		// Cache Compatibility Mode (issue #158): the publisher has opted to keep
+		// the page fully cacheable by LiteSpeed/QUIC.cloud/Varnish/Nginx and to
+		// resolve any jurisdiction-specific logic on the client. Short-circuit to
+		// "not country-dependent" so send_geo_cache_headers() emits no no-cache /
+		// no-store headers and maybe_disable_country_page_cache() never defines
+		// DONOTCACHEPAGE. Still routed through the filter so a developer can force
+		// the cache-bust back on per request if a specific page truly varies.
+		if ( ! empty( $settings['banner_control']['cache_compatibility'] ) ) {
+			return (bool) apply_filters( 'faz_country_dependent_banner_output', false, $settings );
+		}
+
 		$dependent = false;
 
 		// Country→language fallback (CodeRabbit review, 1.14.2): when the
