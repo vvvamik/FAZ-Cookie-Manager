@@ -142,6 +142,15 @@ eq('marketing module then text/javascript stays blocked',
 eq('marketing litespeed placeholder then runnable type is blocked',
   ev(`(function(){ var s=document.createElement("script"); s.setAttribute("data-faz-category","marketing"); s.setAttribute("type","litespeed/javascript"); s.setAttribute("type","text/javascript"); return s.getAttribute("type"); })()`),
   'javascript/blocked');
+// type="" is a CLASSIC executable script, not a stale placeholder: a marketing
+// tracker flipped from a placeholder to type="" must be blocked (CodeRabbit #160).
+eq('marketing placeholder then type="" is blocked',
+  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("data-faz-category","marketing"); s.setAttribute("type","litespeed/javascript"); s.setAttribute("type",""); return s.getAttribute("type"); })()`),
+  'javascript/blocked');
+// a non-tracker reassigned to type="" stays "" (not resurrected as a placeholder).
+eq('non-tracker type="" stays empty',
+  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","module"); s.setAttribute("type",""); return s.getAttribute("type"); })()`),
+  '');
 // src getter still returns the resolved absolute URL (native semantics).
 eq('src getter returns the resolved absolute URL on a non-blocked module',
   ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","module"); s.setAttribute("src","sub/app.js"); return s.src; })()`),

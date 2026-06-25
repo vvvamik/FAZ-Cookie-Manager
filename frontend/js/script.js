@@ -3070,6 +3070,19 @@ function _fazMutationObserver(mutations) {
         }
     }
 
+    // De-duplicate before processing: the same <script> can arrive in one batch
+    // as both a childList addedNode AND an attributes (type-flip) mutation
+    // target. Without this it would be blocked/backed-up twice (two placeholder
+    // clones, two backup entries). Reference identity via indexOf. (#158)
+    if (nodesToProcess.length > 1) {
+        var _fazSeenNodes = [];
+        nodesToProcess = nodesToProcess.filter(function (n) {
+            if (_fazSeenNodes.indexOf(n) !== -1) return false;
+            _fazSeenNodes.push(n);
+            return true;
+        });
+    }
+
     for (const node of nodesToProcess) {
             const nodeSrc = node && typeof node.getAttribute === "function"
                 ? (node.getAttribute("src") || node.src || "")
@@ -3772,7 +3785,13 @@ function _fazShouldChangeType(element, src, typeOverride) {
     // by the createElement type setter) wins over the currently-committed
     // attribute, so a module→runnable or placeholder→runnable reassignment is
     // judged on the NEW type, never a stale one. (#158)
-    var effectiveType = (typeof typeOverride === "string" && typeOverride)
+    // Distinguish "an override was provided" from "the override is truthy": a
+    // script reassigned to type="" is a CLASSIC executable script, not the old
+    // placeholder. Treating "" as unset would resurrect a stale
+    // "litespeed/javascript" attribute and wrongly exempt the now-runnable
+    // script. (#158)
+    var hasTypeOverride = typeof typeOverride === "string";
+    var effectiveType = hasTypeOverride
         ? typeOverride
         : ((element.getAttribute && element.getAttribute("type")) ||
             (typeof element.type === "string" ? element.type : ""));
