@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/wp-fixture';
 import type { Page } from '@playwright/test';
-import { upsertPage, wp } from '../utils/wp-env';
+import { ensureFixturePlugin, listActivePluginFiles, restoreActivePluginFiles, upsertPage, wp } from '../utils/wp-env';
 
 /**
  * Cache Compatibility Mode (issue #158) — end-to-end header behaviour.
@@ -82,6 +82,7 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
   let nonce = '';
   let originalBannerControl: Record<string, unknown> = {};
   let originalIab: Record<string, unknown> = {};
+  let originalActivePluginFiles: string[] | null = null;
   let fixtureId = 0;
 
   async function applyState(opts: { cacheCompat: boolean; iab: boolean }): Promise<void> {
@@ -92,6 +93,8 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
   }
 
   test.beforeAll(async ({ browser, loginAsAdmin }) => {
+    originalActivePluginFiles = listActivePluginFiles();
+    ensureFixturePlugin('faz-e2e-audit-lab');
     fixtureId = upsertPage(
       CACHE_FIXTURE_SLUG,
       'FAZ Cache Compatibility Provider',
@@ -118,6 +121,9 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
       } catch {
         /* best-effort cleanup */
       }
+    }
+    if (originalActivePluginFiles !== null) {
+      restoreActivePluginFiles(originalActivePluginFiles);
     }
     await admin.close();
   });
@@ -199,5 +205,62 @@ test.describe('Cache Compatibility Mode (issue #158)', () => {
     expect(consentedTags.length).toBeGreaterThan(0);
     expect(noConsentTags.every(isBlockedAnalyticsTag)).toBe(true);
     expect(consentedTags.every(isBlockedAnalyticsTag)).toBe(true);
+  });
+
+  // Regression for the gooloo.de report (#158): a full-page-cached site shares
+  // ONE rendered copy between crawlers and humans. With hide_from_bots on, a
+  // crawler request (or LiteSpeed's own cache-warming crawler) used to produce a
+  // banner-less copy that then got cached and served to every visitor — banner
+  // permanently hidden, trackers unblocked. Under Cache Compatibility Mode the
+  // render must be visitor-invariant, so the bot-skip is suppressed.
+  test('8. cache-compat ON makes the render bot-invariant — banner enqueued for crawlers too (#158)', async ({ browser }) => {
+    const GOOGLEBOT = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+    const hasFazScript = (html: string) => /faz-cookie-manager\/frontend\/js\/script(\.min)?\.js/.test(html);
+    const fetchAsBot = async (): Promise<string> => {
+      const ctx = await browser.newContext({ userAgent: GOOGLEBOT });
+      try {
+        const res = await ctx.request.get(BASE + '/', { headers: { 'User-Agent': GOOGLEBOT } });
+        expect(res.status()).toBeLessThan(400);
+        return await res.text();
+      } finally {
+        await ctx.close();
+      }
+    };
+
+    // cache-compat OFF + hide_from_bots ON: the bot render skips the banner
+    // bootstrap (unchanged legacy behaviour — safe because the page is not cached).
+    await postSettings(admin, nonce, {
+      banner_control: { ...originalBannerControl, status: true, hide_from_bots: true, cache_compatibility: false },
+      iab: { ...originalIab, enabled: false },
+    });
+    expect(hasFazScript(await fetchAsBot()), 'bot render WITHOUT cache-compat should skip FAZ').toBe(false);
+
+    // cache-compat ON: the bot-skip is suppressed so the cacheable copy a crawler
+    // generates still ships script.min.js — humans served that copy get the banner.
+    await postSettings(admin, nonce, {
+      banner_control: { ...originalBannerControl, status: true, hide_from_bots: true, cache_compatibility: true },
+      iab: { ...originalIab, enabled: false },
+    });
+    expect(hasFazScript(await fetchAsBot()), 'bot render WITH cache-compat must include FAZ').toBe(true);
+  });
+
+  test('9. cache-compat ON keeps TCF config country-invariant and conservative (#158)', async ({ browser }) => {
+    const readTcfConfig = async (country: string): Promise<Record<string, unknown>> => {
+      const html = await anonHtml(browser, `/?faz_e2e_trust_cf=1&faz_e2e_cf_country=${country}`);
+      const match = html.match(/window\._fazTcfConfig=(\{.*?\});/s);
+      expect(match, `TCF config should be emitted for ${country}`).not.toBeNull();
+      return JSON.parse(match?.[1] ?? '{}') as Record<string, unknown>;
+    };
+
+    await postSettings(admin, nonce, {
+      banner_control: { ...originalBannerControl, status: true, cache_compatibility: true },
+      iab: { ...originalIab, enabled: true, cmp_id: 2 },
+    });
+
+    const usConfig = await readTcfConfig('US');
+    const deConfig = await readTcfConfig('DE');
+
+    expect(usConfig).toEqual(deConfig);
+    expect(usConfig.gdprApplies).toBe(true);
   });
 });

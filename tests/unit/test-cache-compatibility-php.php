@@ -30,6 +30,12 @@
 
 namespace FazCookie\Includes {
 	class Store {}
+	class Geolocation {
+		public static $visitorCountry = '';
+		public static function get_visitor_country() {
+			return self::$visitorCountry;
+		}
+	}
 	class Known_Providers {
 		public static function get_all() {
 			return array();
@@ -125,10 +131,32 @@ namespace {
 			return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
 		}
 	}
+	if ( ! function_exists( 'faz_sanitize_text' ) ) {
+		function faz_sanitize_text( $value ) {
+			if ( is_array( $value ) ) {
+				return array_map( 'faz_sanitize_text', $value );
+			}
+			return sanitize_text_field( $value );
+		}
+	}
 	if ( ! function_exists( 'apply_filters' ) ) {
-		// Passthrough: returns the unfiltered value (no hooks in unit context).
 		function apply_filters( $tag, $value ) {
+			$args = array_slice( func_get_args(), 2 );
+			if ( ! empty( $GLOBALS['faz_test_filters'][ $tag ] ) ) {
+				foreach ( $GLOBALS['faz_test_filters'][ $tag ] as $callback ) {
+					$value = call_user_func_array( $callback, array_merge( array( $value ), $args ) );
+				}
+			}
 			return $value;
+		}
+	}
+	if ( ! function_exists( 'add_filter' ) ) {
+		function add_filter( $tag, $callback ) {
+			if ( ! isset( $GLOBALS['faz_test_filters'][ $tag ] ) ) {
+				$GLOBALS['faz_test_filters'][ $tag ] = array();
+			}
+			$GLOBALS['faz_test_filters'][ $tag ][] = $callback;
+			return true;
 		}
 	}
 	if ( ! function_exists( 'add_action' ) ) {
@@ -153,6 +181,7 @@ namespace {
 	$GLOBALS['wpdb'] = new FazTest_WPDB();
 
 	require_once dirname( __DIR__, 2 ) . '/admin/modules/settings/includes/class-settings.php';
+	require_once dirname( __DIR__, 2 ) . '/includes/class-i18n-helpers.php';
 	require_once dirname( __DIR__, 2 ) . '/frontend/class-frontend.php';
 	require_once dirname( __DIR__, 2 ) . '/frontend/class-amp-consent.php';
 	require_once dirname( __DIR__, 2 ) . '/frontend/modules/banner-rest/class-banner-rest.php';
@@ -289,6 +318,36 @@ namespace {
 		'cache_compatibility ON → PHP does not resolve visitor-country runtime rulesets'
 	);
 
+	$GLOBALS['faz_test_filters'] = array(
+		'faz_use_country_language_fallback' => array(
+			function () {
+				return true;
+			},
+		),
+	);
+	$GLOBALS['faz_test_options']['faz_settings'] = array(
+		'languages'      => array(
+			'default'  => 'en',
+			'selected' => array( 'en', 'it' ),
+		),
+		'banner_control' => array( 'cache_compatibility' => false ),
+	);
+	\FazCookie\Includes\Geolocation::$visitorCountry = 'IT';
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'it',
+		'cache_compatibility OFF → opt-in country language fallback can use visitor country'
+	);
+	$GLOBALS['faz_test_options']['faz_settings']['banner_control']['cache_compatibility'] = true;
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'en',
+		'cache_compatibility ON → country language fallback is suppressed for invariant HTML'
+	);
+	$GLOBALS['faz_test_filters'] = array();
+
 	$GLOBALS['faz_test_options']['faz_settings'] = array( 'banner_control' => array( 'cache_compatibility' => true ) );
 	Controller::$countryDependent = true;
 
@@ -321,10 +380,32 @@ namespace {
 		true,
 		'cache_compatibility OFF → REST country-dependent cache-bust is unchanged'
 	);
+	Controller::$countryDependent = false;
+	$GLOBALS['faz_test_filters']  = array(
+		'faz_use_country_language_fallback' => array(
+			function () {
+				return true;
+			},
+		),
+	);
+	assert_eq(
+		$amp_method->invoke( $amp ),
+		true,
+		'cache_compatibility OFF → AMP cache-busts for country language fallback'
+	);
+	$GLOBALS['faz_test_filters'] = array();
+	$GLOBALS['faz_test_options']['faz_settings'] = array(
+		'banner_control' => array( 'cache_compatibility' => false ),
+		'geolocation'    => array( 'geo_targeting' => true, 'default_behavior' => 'no_banner' ),
+	);
+	assert_eq(
+		$amp_method->invoke( $amp ),
+		true,
+		'cache_compatibility OFF → AMP cache-busts for global geo no_banner'
+	);
 
 	// OFF (or absent) → unchanged behaviour: country-dependent only when a
 	// real trigger is active. Controller + Geo_Runtime stubs report "no".
-	\FazCookie\Admin\Modules\Banners\Includes\Controller::$countryDependent = false;
 	\FazCookie\Frontend\Includes\Geo_Runtime::$enabled                              = false;
 	assert_eq(
 		faz_is_dependent( array( 'banner_control' => array( 'cache_compatibility' => false ) ) ),
@@ -343,6 +424,49 @@ namespace {
 		faz_is_dependent( array() ),
 		false,
 		'absent cache_compatibility key + no trigger → not country-dependent'
+	);
+
+	// --- F001 (#158): the MULTILINGUAL branch of faz_current_language() is
+	// gated under cache-compat. TranslatePress ($TRP_LANGUAGE) and Weglot
+	// resolve language from cookie/session state, which would vary the cached
+	// banner store per visitor on a shared URL. Defined LAST so the multilingual
+	// flag doesn't perturb the country-dependent assertions above.
+	if ( ! defined( 'TRP_PLUGIN_VERSION' ) ) {
+		define( 'TRP_PLUGIN_VERSION', '2.0.0' );
+	}
+	$GLOBALS['TRP_LANGUAGE']                      = 'it_IT';
+	$GLOBALS['faz_test_options']['faz_settings']  = array(
+		'languages'      => array(
+			'default'  => 'en',
+			'selected' => array( 'en', 'it' ),
+		),
+		'banner_control' => array( 'cache_compatibility' => false ),
+	);
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'it',
+		'cache_compatibility OFF → TranslatePress cookie/session language is honoured (unchanged)'
+	);
+	$GLOBALS['faz_test_options']['faz_settings']['banner_control']['cache_compatibility'] = true;
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'en',
+		'cache_compatibility ON → TranslatePress language is gated; render stays default-stable (#158)'
+	);
+	$GLOBALS['faz_test_filters'] = array(
+		'wpml_current_language' => array(
+			function () {
+				return 'it';
+			},
+		),
+	);
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'en',
+		'cache_compatibility ON → WPML cookie-mode fallback is gated; render stays default-stable (#160)'
 	);
 
 	echo "\n";
