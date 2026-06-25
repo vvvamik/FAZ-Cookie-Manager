@@ -1,18 +1,24 @@
 /**
- * JS unit test (jsdom) — guards the #158 follow-up: FAZ's script blocker must
- * NOT intercept native WP ES modules / importmaps (WP Interactivity API) or
- * optimiser-deferred scripts (LiteSpeed / WP Rocket "Delay JS"), while STILL
- * blocking a real tracker. Covers:
- *   - _fazIsExemptScriptType / _fazIsExemptScript (the exemption predicate)
- *   - _fazShouldChangeType short-circuits to false for exempt scripts
- *   - the document.createElement override: module/importmap/litespeed types are
- *     never rewritten to "javascript/blocked"; a marketing-tagged tracker still
- *     is; and the src getter returns the resolved absolute URL (native
- *     semantics) instead of the raw attribute.
+ * JS unit test (jsdom) — guards the #158 work: FAZ's script blocker must NOT
+ * intercept native WP ES modules / importmaps (Interactivity API) or
+ * optimiser-deferred placeholders (LiteSpeed / WP Rocket "Delay JS") that are
+ * NOT trackers, while STILL blocking a tracker — even one shipped as
+ * type="module" or deferred by a caching layer.
+ *
+ * The exemption is gated on the tracker decision (category / known provider /
+ * per-service), not on the type string or a spoofable src substring:
+ *   - a genuine module (no blocked category, no known provider) → left intact
+ *     (the Interactivity API keeps working);
+ *   - a module / classic tracker carrying a blocked category → still blocked
+ *     (closes the consent-bypass — #158 review F004/F013/F005);
+ *   - the type setter judges the VALUE being assigned, so a module→runnable or
+ *     placeholder→runnable reassignment can't slip a tracker through (F003);
+ *   - LiteSpeed/WP Rocket placeholders are left to the optimiser and re-blocked
+ *     when their type flips back to a runnable value.
  *
  * Loads the REAL frontend/js/script.js with its DOMContentLoaded bootstrap
  * neutralised. _fazStore = window._fazConfig and ref = window.fazcookie are
- * captured at eval time (script.js:7,34), so the harness seeds them first.
+ * captured at eval time, so the harness seeds them first.
  *
  * Run: node tests/unit/js/script-module-litespeed-exempt.test.mjs
  */
@@ -71,63 +77,73 @@ function loadFrontend() {
   return window;
 }
 
-console.log('script-module / litespeed exemption (jsdom, #158 follow-up)');
+console.log('script-module / litespeed blocking gate (jsdom, #158)');
 const w = loadFrontend();
 const ev = (expr) => w.eval(expr);
 
 // ---------------------------------------------------------------------------
-// _fazIsExemptScriptType — the type-string predicate.
+// _fazIsDeferredPlaceholderType — only the non-executing caching placeholders.
 // ---------------------------------------------------------------------------
-console.log('\n_fazIsExemptScriptType()');
-eq('module → exempt', ev('_fazIsExemptScriptType("module")'), true);
-eq('importmap → exempt', ev('_fazIsExemptScriptType("importmap")'), true);
-eq('application/importmap+json → exempt', ev('_fazIsExemptScriptType("application/importmap+json")'), true);
-eq('litespeed/javascript → exempt', ev('_fazIsExemptScriptType("litespeed/javascript")'), true);
-eq('rocketlazyloadjs → exempt', ev('_fazIsExemptScriptType("rocketlazyloadjs")'), true);
-eq('text/javascript → NOT exempt', ev('_fazIsExemptScriptType("text/javascript")'), false);
-eq('empty → NOT exempt', ev('_fazIsExemptScriptType("")'), false);
+console.log('\n_fazIsDeferredPlaceholderType()');
+eq('litespeed/javascript → placeholder', ev('_fazIsDeferredPlaceholderType("litespeed/javascript")'), true);
+eq('rocketlazyloadjs → placeholder', ev('_fazIsDeferredPlaceholderType("rocketlazyloadjs")'), true);
+eq('module → NOT placeholder', ev('_fazIsDeferredPlaceholderType("module")'), false);
+eq('importmap → NOT placeholder', ev('_fazIsDeferredPlaceholderType("importmap")'), false);
+eq('text/javascript → NOT placeholder', ev('_fazIsDeferredPlaceholderType("text/javascript")'), false);
+eq('empty → NOT placeholder', ev('_fazIsDeferredPlaceholderType("")'), false);
 
 // ---------------------------------------------------------------------------
-// _fazIsExemptScript — the node predicate (stub nodes, no createElement path).
-// ---------------------------------------------------------------------------
-console.log('\n_fazIsExemptScript()');
-const stub = (attrs) => `_fazIsExemptScript({ getAttribute: function(k){ return (${JSON.stringify(attrs)})[k] || null; } })`;
-eq('type=module node → exempt', ev(stub({ type: 'module' })), true);
-eq('WP core script-modules src → exempt', ev(stub({ src: 'http://x/wp-includes/js/dist/script-modules/block-library/navigation/view.min.js' })), true);
-eq('WP interactivity src → exempt', ev(stub({ src: 'http://x/wp-includes/js/dist/interactivity.min.js' })), true);
-eq('ordinary tracker script → NOT exempt', ev(stub({ type: 'text/javascript', src: 'https://t.example.com/a.js' })), false);
-
-// ---------------------------------------------------------------------------
-// _fazShouldChangeType — exempt scripts never block, real tracker does.
+// _fazShouldChangeType — tracker decision gates the exemption.
 // ---------------------------------------------------------------------------
 console.log('\n_fazShouldChangeType()');
 const elem = (attrs) => `{ classList:{contains:function(){return false;}}, src:"", getAttribute:function(k){ return (${JSON.stringify(attrs)})[k] || null; } }`;
-eq('marketing + text/javascript → block (true)', ev(`_fazShouldChangeType(${elem({ 'data-faz-category': 'marketing', type: 'text/javascript' })})`), true);
-eq('marketing + type=module → exempt (false)', ev(`_fazShouldChangeType(${elem({ 'data-faz-category': 'marketing', type: 'module' })})`), false);
-eq('WP core module src, no category → exempt (false)', ev(`_fazShouldChangeType(${elem({ src: 'http://x/wp-includes/js/dist/script-modules/a.js', type: '' })})`), false);
+// genuine module, no blocked category, no provider → left intact (false)
+eq('module, no category → exempt (false)', ev(`_fazShouldChangeType(${elem({ type: 'module' })})`), false);
+eq('importmap, no category → exempt (false)', ev(`_fazShouldChangeType(${elem({ type: 'importmap' })})`), false);
+// a module carrying a blocked category IS a tracker → blocked (true)
+eq('module + marketing category → block (true)', ev(`_fazShouldChangeType(${elem({ type: 'module', 'data-faz-category': 'marketing' })})`), true);
+// classic tracker still blocked
+eq('classic text/javascript + marketing → block (true)', ev(`_fazShouldChangeType(${elem({ type: 'text/javascript', 'data-faz-category': 'marketing' })})`), true);
+// optimiser placeholder is left to the caching layer even when it is a tracker
+eq('litespeed placeholder + marketing → left to optimiser (false)', ev(`_fazShouldChangeType(${elem({ type: 'litespeed/javascript', 'data-faz-category': 'marketing' })})`), false);
+// typeOverride wins over the committed attribute (F003): stale 'module' attr,
+// but the value being assigned is a runnable type on a marketing tracker
+eq('stale module attr + typeOverride text/javascript + marketing → block (true)', ev(`_fazShouldChangeType(${elem({ type: 'module', 'data-faz-category': 'marketing' })}, undefined, "text/javascript")`), true);
+// typeOverride placeholder → still left to optimiser
+eq('typeOverride litespeed placeholder → left to optimiser (false)', ev(`_fazShouldChangeType(${elem({ 'data-faz-category': 'marketing' })}, undefined, "litespeed/javascript")`), false);
 
 // ---------------------------------------------------------------------------
 // document.createElement override — end-to-end behaviour.
 // ---------------------------------------------------------------------------
 console.log('\ndocument.createElement override');
-// A module script tagged into a blocked category must KEEP type="module".
-eq('module type is never rewritten, even with a blocked category tag',
-  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","module"); s.setAttribute("data-faz-category","marketing"); return s.getAttribute("type"); })()`),
+// genuine module (no blocked category) keeps type="module" — Interactivity API.
+eq('module with no blocked category stays module',
+  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","module"); return s.getAttribute("type"); })()`),
   'module');
-// importmap likewise.
-eq('importmap type is never rewritten',
+eq('importmap with no blocked category stays importmap',
   ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","importmap"); return s.getAttribute("type"); })()`),
   'importmap');
-// LiteSpeed-deferred type likewise.
-eq('litespeed/javascript type is never rewritten',
+eq('litespeed placeholder (no category) stays litespeed/javascript',
   ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","litespeed/javascript"); return s.getAttribute("type"); })()`),
   'litespeed/javascript');
-// A real tracker (marketing category) IS still blocked.
-eq('a marketing-tagged classic tracker is still blocked',
+// a module tracker (marketing category) IS now blocked — closes the bypass.
+eq('module tagged marketing is blocked (javascript/blocked)',
+  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("data-faz-category","marketing"); s.setAttribute("type","module"); return s.getAttribute("type"); })()`),
+  'javascript/blocked');
+// classic marketing tracker still blocked.
+eq('classic marketing tracker is blocked',
   ev(`(function(){ var s=document.createElement("script"); s.setAttribute("data-faz-category","marketing"); s.setAttribute("type","text/javascript"); return s.getAttribute("type"); })()`),
   'javascript/blocked');
-// src getter returns the resolved absolute URL (native semantics).
-eq('src getter returns the resolved absolute URL on an exempt script',
+// F003: module→runnable reassignment on a tracker cannot evade (stays blocked).
+eq('marketing module then text/javascript stays blocked',
+  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("data-faz-category","marketing"); s.setAttribute("type","module"); s.setAttribute("type","text/javascript"); return s.getAttribute("type"); })()`),
+  'javascript/blocked');
+// F013 (type-setter half): a deferred placeholder tracker flips to runnable → blocked.
+eq('marketing litespeed placeholder then runnable type is blocked',
+  ev(`(function(){ var s=document.createElement("script"); s.setAttribute("data-faz-category","marketing"); s.setAttribute("type","litespeed/javascript"); s.setAttribute("type","text/javascript"); return s.getAttribute("type"); })()`),
+  'javascript/blocked');
+// src getter still returns the resolved absolute URL (native semantics).
+eq('src getter returns the resolved absolute URL on a non-blocked module',
   ev(`(function(){ var s=document.createElement("script"); s.setAttribute("type","module"); s.setAttribute("src","sub/app.js"); return s.src; })()`),
   'http://localhost/sub/app.js');
 

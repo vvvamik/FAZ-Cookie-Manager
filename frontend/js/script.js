@@ -2950,10 +2950,14 @@ document.createElement = (...args) => {
                 return createdElement.getAttribute("type");
             },
             set: function (value) {
-                // A writer assigning type="module"/"importmap"/"litespeed/..."
-                // is declaring native-module or optimiser-deferred infrastructure
-                // — pass it straight through, never substitute the blocked type.
-                if (!_fazIsExemptScriptType(value) && _fazShouldChangeType(createdElement)) {
+                // Judge the block decision against the value being assigned (so a
+                // tracker declared as type="module" cannot slip through on the
+                // type string alone, and a module→runnable / placeholder→runnable
+                // reassignment is judged on the NEW type, not a stale committed
+                // one). A genuine module / optimiser-deferred placeholder is not a
+                // tagged tracker, so _fazShouldChangeType returns false and the
+                // writer's type is passed through unchanged. (#158)
+                if (_fazShouldChangeType(createdElement, undefined, value)) {
                     // Writer's own value is being intercepted — save it as
                     // the "original" before we substitute the blocked type.
                     if (
@@ -2963,6 +2967,7 @@ document.createElement = (...args) => {
                     ) {
                         originalSetAttribute("data-faz-original-type", value);
                     }
+                    originalSetAttribute("data-faz-blocked-by-us", "1");
                     originalSetAttribute("type", "javascript/blocked");
                 } else {
                     originalSetAttribute("type", value);
@@ -3020,6 +3025,31 @@ function _fazMutationObserver(mutations) {
         return false;
     }
     for (var mi = 0; mi < mutations.length; mi++) {
+        // A type-attribute change can mean an optimiser (LiteSpeed / WP Rocket
+        // "Delay JS") just flipped a deferred placeholder back to a runnable type
+        // IN PLACE (no node removal/re-insertion, so addedNodes never sees it).
+        // Re-evaluate the real script so a deferred tracker is blocked on
+        // execution. Skip our own block marker, the blocked sentinel, and types
+        // that are still non-runnable (placeholder) so we don't loop. (#158)
+        if (mutations[mi].type === "attributes") {
+            var attrTarget = mutations[mi].target;
+            if (
+                attrTarget &&
+                attrTarget.nodeType === 1 &&
+                (attrTarget.nodeName || "").toLowerCase() === "script" &&
+                !_fazInsideNoscript(attrTarget)
+            ) {
+                var flippedType = attrTarget.getAttribute ? (attrTarget.getAttribute("type") || "") : "";
+                if (
+                    flippedType !== "javascript/blocked" &&
+                    !_fazIsDeferredPlaceholderType(flippedType) &&
+                    !(attrTarget.getAttribute && attrTarget.getAttribute("data-faz-blocked-by-us"))
+                ) {
+                    nodesToProcess.push(attrTarget);
+                }
+            }
+            continue;
+        }
         var added = mutations[mi].addedNodes;
         for (var ai = 0; ai < added.length; ai++) {
             var n = added[ai];
@@ -3066,11 +3096,16 @@ function _fazMutationObserver(mutations) {
                 }
                 if (_fazIsUserWhitelisted(nodeSrc)) continue;
                 if (node.classList && node.classList.contains('faz-skip')) continue;
-                // Native ES modules / importmaps and optimiser-deferred scripts
-                // (LiteSpeed/WP Rocket Delay JS) are infrastructure, not trackers —
-                // never neutralise them here. A deferred tracker is re-checked by
-                // its real src once the optimiser swaps the type back. (#158)
-                if (_fazIsExemptScript(node)) continue;
+                // Optimiser-deferred placeholders (LiteSpeed/WP Rocket "Delay JS")
+                // are non-executing — leave them to the optimiser. The real script
+                // is re-checked when its type flips back to a runnable value (the
+                // attribute-mutation path at the top of this observer). A native ES
+                // module / first-party WP Interactivity API script falls through to
+                // _fazShouldBlockResource below, which returns false for
+                // non-trackers — so the Interactivity API is untouched while a
+                // tracker shipped as type="module" is still blocked. (#158)
+                var nodeType = node.getAttribute ? (node.getAttribute("type") || "") : "";
+                if (_fazIsDeferredPlaceholderType(nodeType)) continue;
                 var rawCategory = node.getAttribute
                     ? (node.getAttribute("data-fazcookie") || node.getAttribute("data-faz-category") || "")
                     : "";
@@ -3501,6 +3536,12 @@ const _nodeListObserver = new MutationObserver(_fazMutationObserver);
 _nodeListObserver.observe(document.documentElement, {
     childList: true,
     subtree: true,
+    // Watch type-attribute flips too: a caching layer (LiteSpeed / WP Rocket
+    // "Delay JS") restores a deferred placeholder's type IN PLACE, which
+    // childList never sees. The attribute-mutation branch in _fazMutationObserver
+    // re-blocks the real script if it is a tracker. (#158)
+    attributes: true,
+    attributeFilter: ["type"],
 });
 function _fazCleanHostName(name) {
     return name.replace(/^www./, "");
@@ -3698,47 +3739,46 @@ function _fazIsUserWhitelisted(url) {
     return false;
 }
 /**
- * WordPress Interactivity API / native ES modules and optimiser-deferred
- * scripts must never be intercepted by the consent blocker.
+ * Optimiser-deferred placeholder script types.
  *
- * - type="module" / "importmap" are first-party module infrastructure: blocking
- *   or accessor-wrapping them breaks native module resolution and freezes the
- *   Interactivity API on WP 6.5+ themes (e.g. Twenty Twenty-Five).
- * - type="litespeed/javascript" / "rocketlazyloadjs" are placeholders a caching
- *   layer (LiteSpeed / WP Rocket "Delay JS") re-injects on its own schedule —
- *   FAZ must leave them to the optimiser and re-evaluate the REAL script when it
- *   wakes (its type flips back to a runnable one and the MutationObserver sees it
- *   again), so a tracker delayed by the optimiser still gets blocked on execution.
+ * "litespeed/javascript" (LiteSpeed Cache) and "rocketlazyloadjs" (WP Rocket
+ * "Delay JS") are NON-executing placeholders a caching layer injects and later
+ * flips back to a runnable type on its own schedule. FAZ must leave them to the
+ * optimiser instead of rewriting them — otherwise the real script is destroyed
+ * and never runs even after consent. The REAL script is re-evaluated when its
+ * type flips back to a runnable value: the type setter below and the
+ * attribute-mutation path in _fazMutationObserver both re-check it, so a tracker
+ * delayed by the optimiser is still blocked on execution. (#158)
  *
- * No-op on WordPress < 6.5 / ClassicPress 1.x, which ship none of these script
- * kinds, so older installs behave exactly as before. (#158 follow-up.)
+ * Returns false for everything else — including native ES modules
+ * (type="module"/"importmap"), which ARE executing scripts and are gated by the
+ * normal tracker decision in _fazShouldChangeType (a genuine WP 6.5+
+ * Interactivity API module is not a tagged/known tracker, so it is left intact;
+ * a tracker shipped as type="module" is still blocked).
+ *
+ * No-op on installs that ship none of these caching layers, so older
+ * WordPress / ClassicPress behaves exactly as before.
  */
-function _fazIsExemptScriptType(type) {
+function _fazIsDeferredPlaceholderType(type) {
     if (!type || typeof type !== "string") return false;
     var t = type.toLowerCase();
-    return (
-        t === "module" ||
-        t === "importmap" ||
-        t === "application/importmap+json" ||
-        t === "litespeed/javascript" ||
-        t === "rocketlazyloadjs"
-    );
+    return t === "litespeed/javascript" || t === "rocketlazyloadjs";
 }
-function _fazIsExemptScript(node) {
-    if (!node) return false;
-    var type = (node.getAttribute && node.getAttribute("type")) ||
-        (typeof node.type === "string" ? node.type : "");
-    if (_fazIsExemptScriptType(type)) return true;
-    var src = (node.getAttribute && node.getAttribute("src")) || "";
-    // WordPress 6.5+ Interactivity API / script-modules infrastructure path.
-    return /\/wp-includes\/js\/dist\/(script-modules|interactivity)/i.test(src);
-}
-function _fazShouldChangeType(element, src) {
+function _fazShouldChangeType(element, src, typeOverride) {
     if (element.classList && element.classList.contains('faz-skip')) return false;
-    // Never touch native ES modules / importmaps or optimiser-deferred scripts.
-    if (_fazIsExemptScript(element)) return false;
     var url = src ? src : element.src;
     if (_fazIsUserWhitelisted(url)) return false;
+    // Resolve the effective type: the value being ASSIGNED (typeOverride, passed
+    // by the createElement type setter) wins over the currently-committed
+    // attribute, so a module→runnable or placeholder→runnable reassignment is
+    // judged on the NEW type, never a stale one. (#158)
+    var effectiveType = (typeof typeOverride === "string" && typeOverride)
+        ? typeOverride
+        : ((element.getAttribute && element.getAttribute("type")) ||
+            (typeof element.type === "string" ? element.type : ""));
+    // Leave optimiser-deferred placeholders to the caching layer; the real
+    // script is re-checked when its type flips back to a runnable value.
+    if (_fazIsDeferredPlaceholderType(effectiveType)) return false;
     // Per-service override wins for dynamically-created scripts too: an explicit
     // svc.<id>:yes must unblock a script whose category is denied (and svc:no
     // must block one whose category is allowed). Without this the dynamic
@@ -3773,10 +3813,12 @@ function _fazShouldChangeType(element, src) {
         if (explicit === "no") return true;
         if (explicit === "yes") return false;
     }
-    // Category-level fallback: block when the element's declared category
-    // (from data-fazcookie OR data-faz-category, already resolved into
-    // serviceCategory above) is to be blocked — matching the MutationObserver
-    // path, which also honours data-faz-category.
+    // Tracker decision (also the exemption gate): block when the element's
+    // declared category is to be blocked OR its URL matches a known provider —
+    // matching the MutationObserver path. A native ES module / first-party WP
+    // Interactivity API script is NOT a tagged/known tracker, so this returns
+    // false and the script is left intact; a tracker shipped as type="module"
+    // is a known/tagged provider, so it is still blocked. (#158)
     return (
         (serviceCategory && _fazIsCategoryToBeBlocked(serviceCategory)) ||
         _fazShouldBlockProvider(url)
