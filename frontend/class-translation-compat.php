@@ -46,6 +46,22 @@ class Translation_Compat {
 	}
 
 	/**
+	 * Whether Cache Compatibility Mode is active.
+	 *
+	 * When on, the rendered HTML must be visitor-invariant, so the cookie/
+	 * session-based TranslatePress/Weglot language must NOT override the
+	 * URL/default-resolved language on the `faz_current_language` filter —
+	 * otherwise the shared cached banner store (and its per-language template
+	 * cache key) would be poisoned across visitors. (#158)
+	 *
+	 * @return bool
+	 */
+	private function is_cache_compatibility_enabled() {
+		$settings = get_option( 'faz_settings', array() );
+		return is_array( $settings ) && ! empty( $settings['banner_control']['cache_compatibility'] );
+	}
+
+	/**
 	 * Check if TranslatePress is active.
 	 *
 	 * @return bool
@@ -73,6 +89,10 @@ class Translation_Compat {
 	 * @return string
 	 */
 	public function get_translatepress_language( $language ) {
+		// Under cache-compat, leave the cacheable URL/default language intact.
+		if ( $this->is_cache_compatibility_enabled() ) {
+			return $language;
+		}
 		global $TRP_LANGUAGE;
 		if ( ! empty( $TRP_LANGUAGE ) ) {
 			// TranslatePress uses full locale (en_US) — convert to 2-letter code.
@@ -88,6 +108,10 @@ class Translation_Compat {
 	 * @return string
 	 */
 	public function get_weglot_language( $language ) {
+		// Under cache-compat, leave the cacheable URL/default language intact.
+		if ( $this->is_cache_compatibility_enabled() ) {
+			return $language;
+		}
 		if ( function_exists( 'weglot_get_current_language' ) ) {
 			$weglot_lang = weglot_get_current_language();
 			if ( ! empty( $weglot_lang ) ) {

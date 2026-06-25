@@ -404,6 +404,36 @@ namespace {
 		'absent cache_compatibility key + no trigger → not country-dependent'
 	);
 
+	// --- F001 (#158): the MULTILINGUAL branch of faz_current_language() is
+	// gated under cache-compat. TranslatePress ($TRP_LANGUAGE) and Weglot
+	// resolve language from cookie/session state, which would vary the cached
+	// banner store per visitor on a shared URL. Defined LAST so the multilingual
+	// flag doesn't perturb the country-dependent assertions above.
+	if ( ! defined( 'TRP_PLUGIN_VERSION' ) ) {
+		define( 'TRP_PLUGIN_VERSION', '2.0.0' );
+	}
+	$GLOBALS['TRP_LANGUAGE']                      = 'it_IT';
+	$GLOBALS['faz_test_options']['faz_settings']  = array(
+		'languages'      => array(
+			'default'  => 'en',
+			'selected' => array( 'en', 'it' ),
+		),
+		'banner_control' => array( 'cache_compatibility' => false ),
+	);
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'it',
+		'cache_compatibility OFF → TranslatePress cookie/session language is honoured (unchanged)'
+	);
+	$GLOBALS['faz_test_options']['faz_settings']['banner_control']['cache_compatibility'] = true;
+	faz_current_language( true );
+	assert_eq(
+		faz_current_language(),
+		'en',
+		'cache_compatibility ON → TranslatePress language is gated; render stays default-stable (#158)'
+	);
+
 	echo "\n";
 	if ( $tests_failed > 0 ) {
 		echo "\033[31m✗ {$tests_failed} failed\033[0m, {$tests_passed} passed ({$tests_run} total)\n";

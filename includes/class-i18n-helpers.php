@@ -113,6 +113,21 @@ if ( ! function_exists( 'faz_current_language' ) ) {
 		}
 		$current_language = null;
 
+		// Cache Compatibility Mode: the rendered HTML must be identical for
+		// every anonymous visitor on a given URL. Polylang/WPML encode the
+		// language in the URL (a URL-keyed full-page cache distinguishes them
+		// correctly), but cookie/session-mode TranslatePress ($TRP_LANGUAGE)
+		// and Weglot resolve the language from request state, so reading them
+		// here would vary the cached banner store (language, category names,
+		// GVL/TCF) across visitors sharing the same cached URL. Under
+		// cache-compat we therefore consult only the URL-based sources and
+		// otherwise fall back to the site default; script.js + the banner-rest
+		// swap correct the language client-side (issue #67). Read the option
+		// directly — this is a procedural helper with no access to
+		// Frontend::is_cache_compatibility_enabled().
+		$faz_settings        = get_option( 'faz_settings', array() );
+		$cache_compatibility = is_array( $faz_settings ) && ! empty( $faz_settings['banner_control']['cache_compatibility'] );
+
 		if ( faz_i18n_is_multilingual() ) {
 			// If the plugin used is Polylang.
 			if ( function_exists( 'pll_current_language' ) ) {
@@ -122,14 +137,17 @@ if ( ! function_exists( 'faz_current_language' ) ) {
 				if ( empty( $current_language ) ) {
 					$current_language = pll_default_language();
 				}
-			} elseif ( defined( 'TRP_PLUGIN_VERSION' ) || class_exists( 'TRP_Translate_Press' ) ) {
-				// TranslatePress: read the global language variable.
+			} elseif ( ! $cache_compatibility && ( defined( 'TRP_PLUGIN_VERSION' ) || class_exists( 'TRP_Translate_Press' ) ) ) {
+				// TranslatePress: read the global language variable. Skipped
+				// under cache-compat — $TRP_LANGUAGE can be cookie/session-based
+				// and would poison the shared cached render.
 				global $TRP_LANGUAGE;
 				if ( ! empty( $TRP_LANGUAGE ) ) {
 					$current_language = substr( $TRP_LANGUAGE, 0, 2 );
 				}
-			} elseif ( function_exists( 'weglot_get_current_language' ) ) {
-				// Weglot: use the helper function.
+			} elseif ( ! $cache_compatibility && function_exists( 'weglot_get_current_language' ) ) {
+				// Weglot: use the helper function. Skipped under cache-compat
+				// for the same per-visitor-variation reason as TranslatePress.
 				$current_language = weglot_get_current_language();
 			} else {
 				// If the plugin used is WPML.
@@ -153,9 +171,7 @@ if ( ! function_exists( 'faz_current_language' ) ) {
 			// banner copy via multi-banner geo-routing — an Italian
 			// visitor on a site with selected langs ["en","it"] sees the
 			// `it` content even though the URL is /en/.
-			$current_language    = faz_default_language();
-			$faz_settings        = get_option( 'faz_settings', array() );
-			$cache_compatibility = is_array( $faz_settings ) && ! empty( $faz_settings['banner_control']['cache_compatibility'] );
+			$current_language = faz_default_language();
 			if (
 				! $cache_compatibility
 				&& class_exists( '\\FazCookie\\Includes\\Geolocation' )
