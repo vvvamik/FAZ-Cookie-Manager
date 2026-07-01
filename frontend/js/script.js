@@ -2882,6 +2882,131 @@ function _fazAttachShortCodeStyles() {
 
 /** Script blocker Version 2 */
 
+/**
+ * Runtime `src`-setter gate for <img> and <iframe> (#163 / #167).
+ *
+ * Two third-party patterns bypass the script/iframe/fetch blocker by setting
+ * a resource `src` at runtime, on an element that was never a tracked
+ * createElement('script') and (for server-rendered nodes) was never in the
+ * output buffer with a live src:
+ *
+ *   #163 — map widgets (Leaflet / OpenStreetMap, Bricks Map) draw the map by
+ *          assigning tile URLs to <img> at runtime;
+ *   #167 — Bricks' native lazy-load parks the real embed URL in `data-src`
+ *          (class `bricks-lazy-hidden`) and later does `iframe.src = data-src`
+ *          when the element scrolls into view.
+ *
+ * Gating the `src` setter on both prototypes catches both: a CROSS-ORIGIN
+ * resource whose URL matches a blocked provider in a denied category is held
+ * — URL parked in data-faz-src, no network request — until consent, then
+ * re-enabled by the standard img/iframe[data-faz-src] restore pass.
+ *
+ * Tightly scoped + fast-pathed: same-origin / relative / data: / blob:
+ * resources bail immediately, so only cross-origin resources ever run the
+ * provider match — theme assets and media-library uploads are untouched and
+ * there is no per-resource provider scan on a normal page.
+ */
+function _fazImgShouldBlock(el, url) {
+    if (!_fazStore._block || typeof url !== "string" || url === "") return false;
+    // Root-relative ("/path") is same-origin and bails; protocol-relative
+    // ("//host/path") is CROSS-origin and must still be matched — only the host
+    // check below can clear it. data:/blob: are inert and bail.
+    if ((url.charAt(0) === "/" && url.charAt(1) !== "/") || url.indexOf("data:") === 0 || url.indexOf("blob:") === 0) return false;
+    if (url.indexOf("//") === -1) return false; // relative path → same-origin
+    try { if (new URL(url, location.href).host === location.host) return false; } catch (e) { return false; }
+    if (el && el.classList && el.classList.contains("faz-skip")) return false;
+    if (_fazIsUserWhitelisted(url)) return false;
+    return _fazShouldBlockProvider(url);
+}
+function _fazImgCategory(url) {
+    var providers = _fazMatchingProviders(url);
+    if (providers && providers.length) {
+        // Tag with the category that actually triggers the block (the first
+        // currently-denied one), not blindly providers[0].categories[0]. A URL
+        // matching several providers whose first category is allowed but a
+        // later one denied would otherwise be tagged "allowed": the restore
+        // pass would re-enable it, the src setter would re-park it, and the
+        // unconditional removeAttribute("data-faz-src") would strip the parked
+        // marker — leaving a permanently-broken element. (#168 review)
+        for (var i = 0; i < providers.length; i++) {
+            var cats = providers[i].categories;
+            if (Array.isArray(cats)) {
+                for (var j = 0; j < cats.length; j++) {
+                    if (_fazIsCategoryToBeBlocked(cats[j])) return cats[j];
+                }
+            }
+        }
+        if (Array.isArray(providers[0].categories) && providers[0].categories.length) {
+            return providers[0].categories[0];
+        }
+    }
+    return "functional";
+}
+function _fazGateSrcSetter(proto, hideOnPark) {
+    if (!proto) return;
+    var desc = Object.getOwnPropertyDescriptor(proto, "src");
+    // Only override a configurable native accessor; never clobber a
+    // non-configurable / missing descriptor (would throw and break the element).
+    if (!desc || typeof desc.set !== "function" || typeof desc.get !== "function" || desc.configurable === false) return;
+    var nativeSet = desc.set, nativeGet = desc.get;
+    Object.defineProperty(proto, "src", {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () { return nativeGet.call(this); },
+        set: function (val) {
+            try {
+                if (_fazImgShouldBlock(this, val)) {
+                    this.setAttribute("data-faz-src", String(val));
+                    this.setAttribute("data-faz-category", _fazImgCategory(String(val)));
+                    // Hide a parked iframe (the restore pass clears faz-hidden on
+                    // consent); leave parked <img> visible so a map widget's tile
+                    // layout / positioning is not disturbed.
+                    if (hideOnPark && this.classList) this.classList.add("faz-hidden");
+                    return; // park the URL; issue no request until consent
+                }
+            } catch (e) { /* fall through to the native setter on any error */ }
+            nativeSet.call(this, val);
+        }
+    });
+}
+_fazGateSrcSetter(window.HTMLImageElement && HTMLImageElement.prototype, false);
+_fazGateSrcSetter(window.HTMLIFrameElement && HTMLIFrameElement.prototype, true);
+
+/**
+ * Same gate for the `href` PROPERTY setter on <link>, so a stylesheet a script
+ * assigns at runtime — most commonly Google Fonts loaded through Web Font Loader
+ * (webfont.js), which does `link.href = cssUrl; head.appendChild(link)` — is
+ * parked before the browser fetches it (a <link> only loads once connected with
+ * an href, and we never set the native href when blocking). Parked into
+ * data-faz-href, the same attribute the server-side process_link_tag uses, so
+ * the standard link[data-faz-href] restore pass re-enables it on consent.
+ * Decision + category reuse the shared resource helpers (the element type is
+ * irrelevant to them — they judge by provider match). Scope mirrors the src
+ * gate: this catches the `el.href = …` PROPERTY assignment, not setAttribute.
+ */
+function _fazGateHrefSetter(proto) {
+    if (!proto) return;
+    var desc = Object.getOwnPropertyDescriptor(proto, "href");
+    if (!desc || typeof desc.set !== "function" || typeof desc.get !== "function" || desc.configurable === false) return;
+    var nativeSet = desc.set, nativeGet = desc.get;
+    Object.defineProperty(proto, "href", {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () { return nativeGet.call(this); },
+        set: function (val) {
+            try {
+                if (_fazImgShouldBlock(this, val)) {
+                    this.setAttribute("data-faz-href", String(val));
+                    this.setAttribute("data-faz-category", _fazImgCategory(String(val)));
+                    return; // park the URL; no stylesheet fetch until consent
+                }
+            } catch (e) { /* fall through to the native setter on any error */ }
+            nativeSet.call(this, val);
+        }
+    });
+}
+_fazGateHrefSetter(window.HTMLLinkElement && HTMLLinkElement.prototype);
+
 const _fazCreateElementBackup = document.createElement;
 document.createElement = (...args) => {
     const createdElement = _fazCreateElementBackup.call(document, ...args);
@@ -3389,6 +3514,7 @@ function _fazUnblockServerSide() {
                 var fazSrc = iframe.getAttribute("data-faz-src");
                 if (!_fazIsAllowedScheme(fazSrc)) return;
                 iframe.src = fazSrc;
+                if (!iframe.getAttribute("src")) return; // gate re-parked it — stay parked, recoverable
                 iframe.removeAttribute("data-faz-src");
                 iframe.classList.remove('faz-hidden');
                 // Carry the placeholder's verified provider id onto the restored
@@ -3424,6 +3550,11 @@ function _fazUnblockServerSide() {
             if (_fazShouldBlockResource(cat, fazSrc, el.getAttribute("data-faz-service") || "")) return;
             if (!_fazIsAllowedScheme(fazSrc)) return;
             el.src = fazSrc;
+            // If the gate re-parked it (the URL matches another provider whose
+            // category is still denied), the native src stays empty — leave the
+            // element parked + hidden so it stays recoverable when that category
+            // is also consented, instead of stripping the marker and bricking it.
+            if (!el.getAttribute("src")) return;
             el.removeAttribute("data-faz-src");
             el.classList.remove('faz-hidden');
             // Just-consented embed: mark faz-skip so the observer / video
@@ -3468,6 +3599,7 @@ function _fazUnblockServerSide() {
             if (_fazShouldBlockResource(cat, imgSrc, el.getAttribute("data-faz-service") || "")) return;
             if (!_fazIsAllowedScheme(imgSrc)) return;
             el.src = imgSrc;
+            if (!el.getAttribute("src")) return; // gate re-parked it — stay parked, recoverable
             el.removeAttribute("data-faz-src");
         });
 
@@ -3479,6 +3611,7 @@ function _fazUnblockServerSide() {
             if (_fazShouldBlockResource(cat, fazHref, el.getAttribute("data-faz-service") || "")) return;
             if (!_fazIsAllowedScheme(fazHref)) return;
             el.href = fazHref;
+            if (!el.getAttribute("href")) return; // gate re-parked it — stay parked, recoverable
             el.removeAttribute("data-faz-href");
         });
 

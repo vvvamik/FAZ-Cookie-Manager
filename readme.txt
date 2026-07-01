@@ -4,7 +4,7 @@ Donate link: https://buymeacoffee.com/fabiodalez
 Tags: cookie, gdpr, ccpa, consent, privacy
 Requires at least: 5.0
 Tested up to: 7.0
-Stable tag: 1.21.1
+Stable tag: 1.22.0
 Requires PHP: 7.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -324,6 +324,12 @@ The full changelog (every release back to 1.0.0) lives at:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/blob/main/CHANGELOG.md
 and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
+
+= 1.22.0 =
+* Added: Advanced Consent Mode for Google Consent Mode v2 (#165) — opt-in (default off); the Google tag stack (gtag.js/GA4/Ads) may load before consent with a synchronous denied consent default, while non-Google trackers and the GTM container stay blocked.
+* Added: manual service registration from the built-in catalogue (#161) — register a known provider's cookies into the declaration table from the Cookies page without a scan.
+* Fixed: map tiles, lazy-loaded embeds and runtime-injected stylesheets now blocked before consent (#163, #167). Leaflet/OpenStreetMap and Bricks Map tiles load as runtime <img>, Bricks lazy-load swaps a URL into iframe.src, and Web Font Loader injects a Google Fonts <link> at runtime — all bypassed the blocker. The src/href property setters are now gated on the image, iframe and link prototypes: a cross-origin resource matching a blocked provider in a denied category is parked until consent, then restored.
+* Fixed: banner chrome (Always Active, cookie-table headers) now translates on non-English single-language sites (#164); European Portuguese banner content corrected (#159).
 
 = 1.21.1 =
 * Fix: on full-page-cached sites with Cache Compatibility Mode enabled, the cookie banner could fail to appear on the first visit (and trackers could run) because the rendered page still varied per visitor and one cached copy is shared between everyone — a search-engine or cache-warming crawler produced a banner-less copy, or a wrong-jurisdiction/wrong-language copy, that the cache then served to all visitors. Under Cache Compatibility Mode the render is now fully visitor-invariant: the banner script is always enqueued (no bot/geo skip), the IAB TCF gdprApplies signal is conservative, AMP banner selection is country-neutral, and the banner language no longer reads cookie/session state from TranslatePress, Weglot or WPML "No language in URLs" mode (URL-based Polylang/WPML stay correct; the visitor's real language is still corrected client-side). Reported on gooloo.de.
