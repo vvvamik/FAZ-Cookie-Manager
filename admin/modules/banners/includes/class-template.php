@@ -112,6 +112,18 @@ class Template {
 	protected $language = 'en';
 
 	/**
+	 * Memoized result of resolve_build_locale() for this request.
+	 *
+	 * Pinned on first call (which happens in get_layout_signature() before any
+	 * switch_to_locale()), so the cache-signature read in load(), the locale
+	 * generate() builds with, and the signature re-read in update() all agree
+	 * even if get_locale() shifts mid-request. null = not yet resolved.
+	 *
+	 * @var string|null
+	 */
+	private $resolved_build_locale = null;
+
+	/**
 	 * Instance of the current class
 	 *
 	 * @var object
@@ -204,7 +216,7 @@ class Template {
 		// against the runtime locale, not the plugin's language setting.
 		// See GitHub issue tracking banner German-only regression.
 		$locale_switched = false;
-		$target_locale   = function_exists( 'faz_wp_locale' ) ? faz_wp_locale( $this->language ) : '';
+		$target_locale   = $this->resolve_build_locale();
 		if ( $target_locale && function_exists( 'switch_to_locale' ) && $target_locale !== get_locale() ) {
 			$locale_switched = switch_to_locale( $target_locale );
 		}
@@ -263,6 +275,58 @@ class Template {
 		if ( $locale_switched && function_exists( 'restore_previous_locale' ) ) {
 			restore_previous_locale();
 		}
+	}
+
+	/**
+	 * Resolve the WP locale to switch to while building the cached banner
+	 * template, so that bundled-default plugin strings wrapped in
+	 * `__( '...', 'faz-cookie-manager' )` (e.g. "Always Active" and the
+	 * cookie-audit-table headers "Cookie"/"Duration"/"Description") resolve
+	 * correctly.
+	 *
+	 * Normally this is the banner's own language ($this->language). But on a
+	 * single-language install left at the un-configured English default,
+	 * `faz_current_language()` returns 'en' regardless of the WordPress site
+	 * locale, so the template was force-built in en_US and those chrome
+	 * strings stayed English even on a sk_SK / de_DE site — while runtime
+	 * strings ("Show more"/"Show less", resolved outside the cache) DID
+	 * translate. Reported for sk_SK on wordpress.org.
+	 *
+	 * Fix: when the banner language is the un-configured 'en' default AND the
+	 * install is not running a URL-based multilingual plugin AND the WordPress
+	 * site locale is non-English, build in the WordPress site locale. The
+	 * banner *content* still comes from $this->language ('en' → bundled
+	 * English copy); only the gettext chrome follows the site language. An
+	 * explicit non-English banner language (e.g. FAZ default 'de' on a WP
+	 * en_US site) is untouched. The site locale is invariant per site, so
+	 * this stays full-page-cache safe.
+	 *
+	 * @return string Target WP locale (e.g. 'sk_SK'), or '' to skip switching.
+	 */
+	private function resolve_build_locale() {
+		// Memoize: pin the value on first call so the three callsites
+		// (load() signature, generate() switch, update() signature) cannot
+		// diverge if get_locale() shifts inside the switch_to_locale() window.
+		if ( null !== $this->resolved_build_locale ) {
+			return $this->resolved_build_locale;
+		}
+
+		$faz_locale = function_exists( 'faz_wp_locale' ) ? faz_wp_locale( $this->language ) : '';
+		$resolved   = $faz_locale;
+
+		if (
+			'en' === $this->language
+			&& function_exists( 'faz_i18n_is_multilingual' )
+			&& ! faz_i18n_is_multilingual()
+		) {
+			$wp_locale = get_locale();
+			if ( is_string( $wp_locale ) && '' !== $wp_locale && 0 !== strpos( $wp_locale, 'en' ) ) {
+				$resolved = $wp_locale;
+			}
+		}
+
+		$this->resolved_build_locale = $resolved;
+		return $resolved;
 	}
 
 	/**
@@ -627,6 +691,12 @@ class Template {
 					'per_service'    => ! empty( $banner_control['per_service_consent'] ),
 					'per_cookie'     => ! empty( $banner_control['per_cookie_consent'] ),
 					'description'    => md5( $notice_description ),
+					// The locale resolve_build_locale() picks drives the translated
+					// chrome (Always Active / audit-table headers). It can differ
+					// from $this->language (e.g. de_DE when the key is 'en'), so it
+					// must be in the signature or a WP locale switch would keep
+					// serving stale-language labels from cache. (CodeRabbit PR #164)
+					'build_locale'   => $this->resolve_build_locale(),
 				)
 			)
 		);
