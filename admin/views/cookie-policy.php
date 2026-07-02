@@ -19,6 +19,21 @@ $rest_url   = esc_url( rest_url( 'faz/v1/cookie-policy/' ) );
      data-faz-rest-url="<?php echo esc_url( $rest_url ); ?>"
      data-faz-rest-nonce="<?php echo esc_attr( $rest_nonce ); ?>">
 
+	<?php /* Blocked-script watchdog: cookie-policy.js sets window.fazCpBooted the
+		instant it runs. When an ad blocker or browser privacy shield blocks that
+		file by name — its filename contains "cookie", which some filter lists
+		match — the script never runs, so Save and Preview silently do nothing and
+		the only symptom is "the button does not work". This server-rendered notice
+		(hidden by default) is revealed by the watchdog inline script registered via
+		wp_add_inline_script() in class-admin.php (handle faz-page-cookie-policy) when
+		the page-load lifecycle completes and the boot flag is still unset. The
+		notice carries an aria-live region so the reveal is announced to screen
+		readers when the inner status text is populated. */ ?>
+	<div id="faz-cp-script-blocked" class="notice notice-error inline" style="display:none;">
+		<p id="faz-cp-script-blocked-msg" aria-live="assertive" aria-atomic="true"></p>
+		<template id="faz-cp-script-blocked-text"><?php esc_html_e( 'The Cookie Policy editor did not load, so Save and Preview will not work on this page. A browser privacy shield or ad blocker is most likely blocking its script (the filename contains the word “cookie”, which some block lists match). Allow scripts for /wp-admin in this browser — or pause the shield for this page — then reload.', 'faz-cookie-manager' ); ?></template>
+	</div>
+
 	<?php /* onsubmit="return false" is a no-JS / broken-JS safety net: the form is
 		saved entirely by cookie-policy.js (it preventDefault()s and POSTs via REST).
 		If that script never runs — a JS conflict from another plugin/theme, or a
