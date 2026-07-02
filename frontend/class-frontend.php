@@ -1737,6 +1737,12 @@ class Frontend {
 			// consent, and the banner is shown again. See Settings →
 			// "Invalidate all consents".
 			'_consentRevision' => isset( $settings['general']['consent_revision'] ) ? max( 1, absint( $settings['general']['consent_revision'] ) ) : 1,
+			// Optional high-coverage runtime CSS-url blocker. Default off because
+			// the aggressive client hooks touch broad browser APIs (Element.innerHTML,
+			// insertAdjacentHTML, CharacterData inside <style>, Constructable
+			// Stylesheets). Baseline blocking still covers server-rendered <style>
+			// tags and direct HTMLStyleElement writes before consent.
+			'_aggressiveCssUrlBlocking' => ! empty( $settings['script_blocking']['aggressive_css_url_blocking'] ),
 		);
 		// Merge DB-based providers with Known_Providers for client-side blocking.
 		$valid_categories = $this->get_valid_category_slugs();
@@ -2491,7 +2497,24 @@ class Frontend {
 		//     <noscript>" earlier in this method. Keeping the step-number gap
 		//     to avoid renumbering the rest of the pipeline.)
 
-		// 4. Block <link rel="stylesheet"> (Google Fonts, Adobe Fonts, etc.).
+		// 4. Block inline CSS url()/@import channels — any blocked-provider target
+		//    inside a <style> (fonts, background-image, cursor, mask, @import).
+		if ( false !== stripos( $html, '<style' ) ) {
+			$result = preg_replace_callback(
+				'#<style\b([^>]*)>(.*?)</style>#is',
+				function ( $m ) use ( $providers, $blocked_categories ) {
+					return $this->process_style_tag( $m, $providers, $blocked_categories );
+				},
+				$html
+			);
+			if ( null === $result ) {
+				$pcre_failed = true;
+			} else {
+				$html = $result;
+			}
+		}
+
+		// 5. Block <link rel="stylesheet"> (Google Fonts, Adobe Fonts, etc.).
 		if ( false !== stripos( $html, '<link' ) ) {
 			$result = preg_replace_callback(
 				'#<link\b([^>]*rel\s*=\s*["\']stylesheet["\'][^>]*)/?>#is',
@@ -2507,7 +2530,7 @@ class Frontend {
 			}
 		}
 
-		// 5. Block <script data-faz-waitfor="category"> (deferred dependency scripts).
+		// 6. Block <script data-faz-waitfor="category"> (deferred dependency scripts).
 		if ( false !== stripos( $html, 'data-faz-waitfor' ) ) {
 			$result = preg_replace_callback(
 				'#<script\b([^>]*data-faz-waitfor\s*=\s*["\']([^"\']+)["\'][^>]*)>(.*?)</script>#is',
@@ -2849,6 +2872,152 @@ class Frontend {
 		$new_attrs = preg_replace( '/(^|\s)href\s*=\s*/i', '$1data-faz-href=', $attrs, 1 );
 		$new_attrs .= ' data-faz-category="' . esc_attr( $matched_category ) . '"';
 		return '<link' . $new_attrs . '/>';
+	}
+
+	/**
+	 * Process an inline <style> tag for blockable CSS url()/@import references.
+	 *
+	 * Any external resource referenced from CSS — @font-face src:url(...), but
+	 * also background-image, cursor, border-image, mask, list-style-image and
+	 * bare-string @import — is fetched by the CSS engine, not by <link href>, so
+	 * the stylesheet gate cannot see it. Keep the non-provider CSS active, replace
+	 * only blocked-provider url()/@import targets with an inert data: URL, and
+	 * store the original CSS for the frontend restore pass.
+	 *
+	 * @param array $m                  Regex match.
+	 * @param array $providers          Provider-to-category map.
+	 * @param array $blocked_categories Currently blocked category slugs.
+	 * @return string
+	 */
+	private function process_style_tag( $m, $providers, $blocked_categories ) {
+		$attrs   = isset( $m[1] ) ? $m[1] : '';
+		$content = isset( $m[2] ) ? $m[2] : '';
+		$full    = isset( $m[0] ) ? $m[0] : '';
+
+		if ( '' === trim( $content ) || false !== strpos( $attrs, 'data-faz-css' ) ) {
+			return $full;
+		}
+		if ( $this->is_whitelisted( $attrs, '' ) ) {
+			return $full;
+		}
+
+		$categories = array();
+		$rewritten  = $this->neutralize_blocked_css_urls( $content, $providers, $blocked_categories, $categories );
+		if ( $rewritten === $content || empty( $categories ) ) {
+			return $full;
+		}
+
+		$category = reset( $categories );
+		$new_attrs = $attrs;
+		$new_attrs .= ' data-faz-css="' . esc_attr( base64_encode( $content ) ) . '"'; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- inert transport for original CSS text, decoded only after consent.
+		$new_attrs .= ' data-faz-category="' . esc_attr( $category ) . '"';
+
+		return '<style' . $new_attrs . '>' . $rewritten . '</style>';
+	}
+
+	/**
+	 * Replace blocked CSS URL tokens with an inert data URL.
+	 *
+	 * @param string $css                CSS text.
+	 * @param array  $providers          Provider-to-category map.
+	 * @param array  $blocked_categories Currently blocked category slugs.
+	 * @param array  $categories         Output list of categories that triggered a block.
+	 * @return string Rewritten CSS.
+	 */
+	private function neutralize_blocked_css_urls( $css, $providers, $blocked_categories, &$categories ) {
+		$categories = array();
+		$inert_url  = 'data:application/octet-stream,';
+		$block_url  = function ( $url ) use ( $providers, $blocked_categories, &$categories ) {
+			$url      = trim( (string) $url );
+			$category = $this->css_url_block_category( $url, $providers, $blocked_categories );
+			if ( false === $category ) {
+				return false;
+			}
+			$categories[] = $category;
+			return true;
+		};
+
+		$original = (string) $css;
+
+		$rewritten = preg_replace_callback(
+			'/url\(\s*(?:"([^"]*)"|\'([^\']*)\'|([^)\s]+))\s*\)/i',
+			function ( $m ) use ( $block_url, $inert_url ) {
+				$url = isset( $m[1] ) && '' !== $m[1] ? $m[1] : ( isset( $m[2] ) && '' !== $m[2] ? $m[2] : ( isset( $m[3] ) ? $m[3] : '' ) );
+				if ( ! $block_url( $url ) ) {
+					return $m[0];
+				}
+				return 'url("' . $inert_url . '")';
+			},
+			$original
+		);
+		// PCRE error (backtrack/recursion limit on crafted or very large CSS)
+		// returns null. Fail OPEN: reset categories and return the ORIGINAL CSS
+		// so process_style_tag leaves the <style> untouched, instead of emitting
+		// an empty <style> body that strips every rule. Also never pass a null
+		// subject into the second pass (deprecated / TypeError on PHP 8.1+).
+		if ( null === $rewritten ) {
+			$categories = array();
+			return $original;
+		}
+
+		$rewritten = preg_replace_callback(
+			'/(@import\s+)(["\'])([^"\']+)\2/i',
+			function ( $m ) use ( $block_url, $inert_url ) {
+				if ( ! $block_url( $m[3] ) ) {
+					return $m[0];
+				}
+				return $m[1] . 'url("' . $inert_url . '")';
+			},
+			$rewritten
+		);
+		if ( null === $rewritten ) {
+			$categories = array();
+			return $original;
+		}
+
+		$categories = array_values( array_unique( $categories ) );
+		return $rewritten;
+	}
+
+	/**
+	 * Return the category that requires a CSS URL to be blocked.
+	 *
+	 * @param string $url                CSS url()/@import target.
+	 * @param array  $providers          Provider-to-category map.
+	 * @param array  $blocked_categories Currently blocked category slugs.
+	 * @return string|false Category slug, or false when allowed.
+	 */
+	private function css_url_block_category( $url, $providers, $blocked_categories ) {
+		$url = trim( (string) $url, " \t\n\r\0\x0B\"'" );
+		if ( '' === $url || '#' === $url[0] || 0 === stripos( $url, 'data:' ) || 0 === stripos( $url, 'blob:' ) ) {
+			return false;
+		}
+
+		$service_consent = $this->get_service_consent();
+		$pattern_map     = ! empty( $service_consent ) ? $this->get_pattern_service_map() : array();
+		foreach ( $providers as $pattern => $category ) {
+			if ( empty( $pattern ) || ! $this->provider_url_pattern_matches( $url, $pattern ) ) {
+				continue;
+			}
+
+			$explicit_yes = false;
+			if ( ! empty( $service_consent ) && ! empty( $pattern_map[ $pattern ] ) ) {
+				foreach ( $pattern_map[ $pattern ] as $service_id ) {
+					if ( isset( $service_consent[ $service_id ] ) && 'no' === $service_consent[ $service_id ] ) {
+						return $category;
+					}
+					if ( isset( $service_consent[ $service_id ] ) && 'yes' === $service_consent[ $service_id ] ) {
+						$explicit_yes = true;
+					}
+				}
+			}
+
+			if ( ! $explicit_yes && in_array( $category, $blocked_categories, true ) ) {
+				return $category;
+			}
+		}
+
+		return false;
 	}
 
 	/**

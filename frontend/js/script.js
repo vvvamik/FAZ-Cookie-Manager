@@ -3007,6 +3007,523 @@ function _fazGateHrefSetter(proto) {
 }
 _fazGateHrefSetter(window.HTMLLinkElement && HTMLLinkElement.prototype);
 
+var _FAZ_INERT_CSS_URL = 'data:application/octet-stream,';
+
+function _fazAggressiveCssUrlBlockingEnabled() {
+    return !!(_fazStore && _fazStore._aggressiveCssUrlBlocking);
+}
+
+function _fazCssUrls(css) {
+    var urls = [];
+    if (!css || typeof css !== "string") return urls;
+    css.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^\)\s]+))\s*\)/gi, function (_m, dq, sq, bare) {
+        urls.push(dq || sq || bare || "");
+        return _m;
+    });
+    css.replace(/@import\s+(["'])([^"']+)\1/gi, function (_m, _q, url) {
+        urls.push(url || "");
+        return _m;
+    });
+    return urls;
+}
+
+function _fazCssUrlShouldBlock(url) {
+    if (!url || typeof url !== "string") return false;
+    url = url.trim();
+    if (!url || url.charAt(0) === "#" || /^data:/i.test(url) || /^blob:/i.test(url)) return false;
+    if (_fazIsUserWhitelisted(url)) return false;
+    return _fazShouldBlockProvider(url);
+}
+
+function _fazCssShouldBlock(css) {
+    var urls = _fazCssUrls(css);
+    for (var i = 0; i < urls.length; i++) {
+        if (_fazCssUrlShouldBlock(urls[i])) return true;
+    }
+    return false;
+}
+
+function _fazCssBlockedCategory(css) {
+    var urls = _fazCssUrls(css);
+    for (var i = 0; i < urls.length; i++) {
+        if (_fazCssUrlShouldBlock(urls[i])) return _fazImgCategory(urls[i]);
+    }
+    return "functional";
+}
+
+function _fazNeutralizeCssUrls(css) {
+    if (!css || typeof css !== "string") return css;
+    css = css.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^\)\s]+))\s*\)/gi, function (match, dq, sq, bare) {
+        var url = dq || sq || bare || "";
+        return _fazCssUrlShouldBlock(url) ? 'url("' + _FAZ_INERT_CSS_URL + '")' : match;
+    });
+    css = css.replace(/(@import\s+)(["'])([^"']+)\2/gi, function (match, prefix, _quote, url) {
+        return _fazCssUrlShouldBlock(url) ? prefix + 'url("' + _FAZ_INERT_CSS_URL + '")' : match;
+    });
+    return css;
+}
+
+function _fazBase64EncodeUtf8(str) {
+    try {
+        return btoa(unescape(encodeURIComponent(str)));
+    } catch (_e) {
+        return "";
+    }
+}
+
+function _fazBase64DecodeUtf8(encoded) {
+    try {
+        return decodeURIComponent(escape(atob(encoded)));
+    } catch (_e) {
+        return "";
+    }
+}
+
+var _fazStyleOriginalCssByNode = window.WeakMap ? new WeakMap() : null;
+
+function _fazIsStyleTextNode(node) {
+    return !!(node && (node.nodeType === 3 || node.nodeType === 4));
+}
+
+function _fazHasStyleNodeOriginalCss(node) {
+    if (!node) return false;
+    if (_fazStyleOriginalCssByNode && _fazStyleOriginalCssByNode.has(node)) return true;
+    return Object.prototype.hasOwnProperty.call(node, "__fazOriginalCss");
+}
+
+function _fazSetStyleNodeOriginalCss(node, css) {
+    if (!node) return;
+    if (_fazStyleOriginalCssByNode) _fazStyleOriginalCssByNode.set(node, String(css || ""));
+    try { node.__fazOriginalCss = String(css || ""); } catch (_e) { /* ignore expando failures */ }
+}
+
+function _fazClearStyleNodeOriginalCss(node) {
+    if (!node) return;
+    if (_fazStyleOriginalCssByNode) _fazStyleOriginalCssByNode.delete(node);
+    try { delete node.__fazOriginalCss; } catch (_e) { /* ignore expando failures */ }
+}
+
+function _fazGetStyleNodeOriginalCss(node) {
+    if (!node) return "";
+    if (_fazStyleOriginalCssByNode && _fazStyleOriginalCssByNode.has(node)) {
+        return _fazStyleOriginalCssByNode.get(node) || "";
+    }
+    if (Object.prototype.hasOwnProperty.call(node, "__fazOriginalCss")) {
+        return node.__fazOriginalCss || "";
+    }
+    return typeof node.nodeValue === "string" ? node.nodeValue : "";
+}
+
+function _fazPrimeStyleCssMarkers(style) {
+    if (!style || !style.getAttribute || !style.childNodes) return;
+    var encoded = style.getAttribute("data-faz-css") || "";
+    if (!encoded) return;
+    var original = _fazBase64DecodeUtf8(encoded);
+    if (!original) return;
+    if (style.childNodes.length === 1 && _fazIsStyleTextNode(style.childNodes[0]) && !_fazHasStyleNodeOriginalCss(style.childNodes[0])) {
+        // Only adopt the parked original when the live node still holds its
+        // neutralized form (server-rendered <style data-faz-css> with the inert
+        // CSS as its content). If the node was overwritten with different CSS —
+        // e.g. `style.textContent = "body{color:red}"` after a prior blocked
+        // write left a stale data-faz-css — its value won't match, so priming is
+        // skipped and the restore pass can't resurrect the old blocked CSS.
+        if (_fazNeutralizeCssUrls(original) === style.childNodes[0].nodeValue) {
+            _fazSetStyleNodeOriginalCss(style.childNodes[0], original);
+        }
+    }
+}
+
+function _fazStyleOriginalCss(style) {
+    if (!style || !style.childNodes) return "";
+    _fazPrimeStyleCssMarkers(style);
+    var css = "";
+    for (var i = 0; i < style.childNodes.length; i++) {
+        var node = style.childNodes[i];
+        css += _fazIsStyleTextNode(node) ? _fazGetStyleNodeOriginalCss(node) : (node.textContent || "");
+    }
+    return css;
+}
+
+function _fazSyncStyleCssAttribute(style) {
+    if (!style || !style.setAttribute || !style.removeAttribute) return;
+    var original = _fazStyleOriginalCss(style);
+    if (original && _fazStore._block && _fazCssShouldBlock(original)) {
+        var encoded = _fazBase64EncodeUtf8(original);
+        if (encoded) style.setAttribute("data-faz-css", encoded);
+        style.setAttribute("data-faz-category", _fazCssBlockedCategory(original));
+    } else {
+        style.removeAttribute("data-faz-css");
+        style.removeAttribute("data-faz-category");
+    }
+}
+
+function _fazPrepareStyleStringArg(style, css) {
+    if (!_fazStore._block || !css || typeof css !== "string" || !_fazCssShouldBlock(css)) return css;
+    var doc = (style && style.ownerDocument) || document;
+    var node = doc.createTextNode(_fazNeutralizeCssUrls(css));
+    _fazSetStyleNodeOriginalCss(node, css);
+    return node;
+}
+
+function _fazPrepareStyleTextNode(style, node) {
+    if (!_fazIsStyleTextNode(node)) return;
+    var original = _fazGetStyleNodeOriginalCss(node);
+    if (!_fazStore._block || !original || !_fazCssShouldBlock(original)) {
+        if (_fazHasStyleNodeOriginalCss(node) && node.nodeValue !== original) node.nodeValue = original;
+        _fazClearStyleNodeOriginalCss(node);
+        return;
+    }
+    var neutralized = _fazNeutralizeCssUrls(original);
+    _fazSetStyleNodeOriginalCss(node, original);
+    if (node.nodeValue !== neutralized) node.nodeValue = neutralized;
+}
+
+function _fazPrepareStyleNodeTree(style, node) {
+    if (_fazIsStyleTextNode(node)) {
+        _fazPrepareStyleTextNode(style, node);
+        return;
+    }
+    if (!node || !node.childNodes) return;
+    for (var i = 0; i < node.childNodes.length; i++) {
+        _fazPrepareStyleNodeTree(style, node.childNodes[i]);
+    }
+}
+
+function _fazFindAccessorDescriptor(proto, prop) {
+    while (proto) {
+        var desc = Object.getOwnPropertyDescriptor(proto, prop);
+        if (desc) return desc;
+        proto = Object.getPrototypeOf(proto);
+    }
+    return null;
+}
+
+function _fazGateStyleTextSetter(proto, prop) {
+    if (!proto) return;
+    var desc = _fazFindAccessorDescriptor(proto, prop);
+    if (!desc || typeof desc.set !== "function" || typeof desc.get !== "function" || desc.configurable === false) return;
+    var nativeSet = desc.set, nativeGet = desc.get;
+    Object.defineProperty(proto, prop, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () { return nativeGet.call(this); },
+        set: function (val) {
+            var s = String(val == null ? "" : val);
+            // Fail open on any error in the CSS-block logic: assign the original
+            // CSS rather than dropping it (a thrown error must never blank the
+            // page's inline styles).
+            try {
+                if (_fazStore._block && s && _fazCssShouldBlock(s)) {
+                    nativeSet.call(this, _fazNeutralizeCssUrls(s));
+                    if (_fazIsStyleTextNode(this.firstChild)) _fazSetStyleNodeOriginalCss(this.firstChild, s);
+                } else {
+                    nativeSet.call(this, s);
+                }
+                _fazSyncStyleCssAttribute(this);
+            } catch (e) {
+                try {
+                    this.removeAttribute("data-faz-css");
+                    this.removeAttribute("data-faz-category");
+                } catch (_ignore) { /* ignore */ }
+                nativeSet.call(this, s);
+            }
+        }
+    });
+}
+
+function _fazGateStyleTextNodeMethod(proto, methodName) {
+    if (!proto || !window.Node) return;
+    var native = proto[methodName]
+        || (Node.prototype && Node.prototype[methodName])
+        || (window.Element && Element.prototype && Element.prototype[methodName]);
+    if (typeof native !== "function") return;
+    Object.defineProperty(proto, methodName, {
+        // writable + enumerable to match the native inherited method's descriptor
+        // shape, so a later `HTMLStyleElement.prototype.<m> = fn` reassignment
+        // (polyfills, other libs) doesn't throw in strict mode.
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: function () {
+            var args = Array.prototype.slice.call(arguments);
+            if (methodName === "insertBefore" && args.length > 1 && args[1] !== null && args[1] && args[1].parentNode !== this) {
+                return native.apply(this, args);
+            }
+            if (methodName === "replaceChild" && (!args[1] || args[1].parentNode !== this)) {
+                return native.apply(this, args);
+            }
+            try { _fazPrimeStyleCssMarkers(this); } catch (_primeErr) { /* keep native behavior */ }
+            var cssArgCount = methodName === "append" ? args.length : Math.min(args.length, 1);
+            for (var i = 0; i < cssArgCount; i++) {
+                var arg = args[i];
+                try {
+                    if (methodName === "append" && typeof arg === "string") {
+                        args[i] = _fazPrepareStyleStringArg(this, arg);
+                    } else {
+                        // Mutate text nodes in place rather than inserting clones, so
+                        // the native call keeps node identity, parentNode, and return
+                        // value semantics intact.
+                        _fazPrepareStyleNodeTree(this, arg);
+                    }
+                } catch (e) { /* leave this argument untouched on any error */ }
+            }
+            var result = native.apply(this, args);
+            try { _fazSyncStyleCssAttribute(this); } catch (_syncErr) { /* native mutation already succeeded */ }
+            return result;
+        }
+    });
+}
+
+_fazGateStyleTextSetter(window.HTMLStyleElement && HTMLStyleElement.prototype, "textContent");
+_fazGateStyleTextSetter(window.HTMLStyleElement && HTMLStyleElement.prototype, "innerHTML");
+_fazGateStyleTextNodeMethod(window.HTMLStyleElement && HTMLStyleElement.prototype, "appendChild");
+_fazGateStyleTextNodeMethod(window.HTMLStyleElement && HTMLStyleElement.prototype, "insertBefore");
+_fazGateStyleTextNodeMethod(window.HTMLStyleElement && HTMLStyleElement.prototype, "replaceChild");
+_fazGateStyleTextNodeMethod(window.HTMLStyleElement && HTMLStyleElement.prototype, "append");
+
+// Removal must re-sync data-faz-css from the remaining live nodes, so removing a
+// blocked text node (or clearing the style) doesn't leave a stale attribute that
+// the restore pass would use to resurrect the removed CSS. (review R25)
+function _fazGateStyleRemoveMethod(proto, methodName) {
+    if (!proto || !window.Node) return;
+    var native = proto[methodName]
+        || (Node.prototype && Node.prototype[methodName]);
+    if (typeof native !== "function") return;
+    Object.defineProperty(proto, methodName, {
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: function () {
+            var result = native.apply(this, arguments);
+            try {
+                // Drop the stale parked attribute BEFORE re-syncing: otherwise the
+                // single-node prime heuristic in _fazStyleOriginalCss would copy the
+                // old cumulative original (including the just-removed node's CSS)
+                // onto a benign leftover text node. Re-sync then rebuilds the
+                // attribute from the remaining live nodes' real originals.
+                if (this.removeAttribute) {
+                    this.removeAttribute("data-faz-css");
+                    this.removeAttribute("data-faz-category");
+                }
+                _fazSyncStyleCssAttribute(this);
+            } catch (_e) { /* native mutation already succeeded */ }
+            return result;
+        }
+    });
+}
+_fazGateStyleRemoveMethod(window.HTMLStyleElement && HTMLStyleElement.prototype, "removeChild");
+
+function _fazStyleParentForCharacterData(node) {
+    var parent = node && node.parentNode;
+    if (!parent || parent.nodeType !== 1) return null;
+    return (parent.nodeName || "").toLowerCase() === "style" ? parent : null;
+}
+
+function _fazApplyStyleCharacterData(style, node, value, writeValue) {
+    var s = String(value == null ? "" : value);
+    if (_fazStore._block && s && _fazCssShouldBlock(s)) {
+        _fazSetStyleNodeOriginalCss(node, s);
+        writeValue(node, _fazNeutralizeCssUrls(s));
+    } else {
+        _fazClearStyleNodeOriginalCss(node);
+        writeValue(node, s);
+    }
+    _fazSyncStyleCssAttribute(style);
+}
+
+function _fazGateStyleCharacterDataSetter(proto, prop) {
+    if (!proto) return;
+    var desc = _fazFindAccessorDescriptor(proto, prop);
+    if (!desc || typeof desc.set !== "function" || typeof desc.get !== "function" || desc.configurable === false) return;
+    var nativeSet = desc.set, nativeGet = desc.get;
+    Object.defineProperty(proto, prop, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () { return nativeGet.call(this); },
+        set: function (val) {
+            var style = _fazStyleParentForCharacterData(this);
+            if (!style) {
+                nativeSet.call(this, val);
+                return;
+            }
+            try {
+                _fazPrimeStyleCssMarkers(style);
+                _fazApplyStyleCharacterData(style, this, val, function (node, value) {
+                    nativeSet.call(node, value);
+                });
+            } catch (e) {
+                nativeSet.call(this, val);
+            }
+        }
+    });
+}
+
+function _fazGateStyleCharacterDataMethod(proto, methodName) {
+    if (!proto) return;
+    var native = proto[methodName];
+    if (typeof native !== "function") return;
+    Object.defineProperty(proto, methodName, {
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: function () {
+            var style = _fazStyleParentForCharacterData(this);
+            if (!style) return native.apply(this, arguments);
+            try {
+                _fazPrimeStyleCssMarkers(style);
+                var doc = this.ownerDocument || document;
+                var probe = doc.createTextNode(_fazGetStyleNodeOriginalCss(this));
+                native.apply(probe, arguments);
+                _fazApplyStyleCharacterData(style, this, probe.data, function (node, value) {
+                    node.nodeValue = value;
+                });
+                return undefined;
+            } catch (e) {
+                return native.apply(this, arguments);
+            }
+        }
+    });
+}
+
+if (_fazAggressiveCssUrlBlockingEnabled()) {
+    _fazGateStyleCharacterDataSetter(window.CharacterData && CharacterData.prototype, "data");
+    _fazGateStyleCharacterDataMethod(window.CharacterData && CharacterData.prototype, "appendData");
+    _fazGateStyleCharacterDataMethod(window.CharacterData && CharacterData.prototype, "insertData");
+    _fazGateStyleCharacterDataMethod(window.CharacterData && CharacterData.prototype, "deleteData");
+    _fazGateStyleCharacterDataMethod(window.CharacterData && CharacterData.prototype, "replaceData");
+}
+
+function _fazEscapeHtmlAttr(value) {
+    return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;");
+}
+
+function _fazPrepareStyleTagHtml(full, attrs, css) {
+    if (!_fazStore._block || !css || typeof css !== "string" || !_fazCssShouldBlock(css)) return full;
+    if (attrs && /\bdata-faz-css\s*=/i.test(attrs)) return full;
+    var rewritten = _fazNeutralizeCssUrls(css);
+    if (rewritten === css) return full;
+    var encoded = _fazBase64EncodeUtf8(css);
+    if (!encoded) return full;
+    return '<style' + (attrs || '') +
+        ' data-faz-css="' + _fazEscapeHtmlAttr(encoded) + '"' +
+        ' data-faz-category="' + _fazEscapeHtmlAttr(_fazCssBlockedCategory(css)) + '">' +
+        rewritten +
+        '</style>';
+}
+
+function _fazPrepareStyleHtmlString(html) {
+    if (!html || typeof html !== "string" || html.toLowerCase().indexOf("<style") === -1) return html;
+    return html.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, function (full, attrs, css) {
+        try { return _fazPrepareStyleTagHtml(full, attrs || "", css || ""); } catch (e) { return full; }
+    });
+}
+
+function _fazGateHtmlStyleStringSetter(proto, prop) {
+    if (!proto) return;
+    var desc = _fazFindAccessorDescriptor(proto, prop);
+    if (!desc || typeof desc.set !== "function" || typeof desc.get !== "function" || desc.configurable === false) return;
+    var nativeSet = desc.set, nativeGet = desc.get;
+    Object.defineProperty(proto, prop, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: function () { return nativeGet.call(this); },
+        set: function (val) {
+            var html = String(val == null ? "" : val);
+            try { html = _fazPrepareStyleHtmlString(html); } catch (e) { /* fail open */ }
+            nativeSet.call(this, html);
+        }
+    });
+}
+
+function _fazGateInsertAdjacentHtml(proto) {
+    if (!proto || typeof proto.insertAdjacentHTML !== "function") return;
+    var native = proto.insertAdjacentHTML;
+    Object.defineProperty(proto, "insertAdjacentHTML", {
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: function (position, html) {
+            var s = String(html == null ? "" : html);
+            try { s = _fazPrepareStyleHtmlString(s); } catch (e) { /* fail open */ }
+            return native.call(this, position, s);
+        }
+    });
+}
+
+if (_fazAggressiveCssUrlBlockingEnabled()) {
+    _fazGateHtmlStyleStringSetter(window.Element && Element.prototype, "innerHTML");
+    _fazGateInsertAdjacentHtml(window.Element && Element.prototype);
+}
+
+// Constructable Stylesheets (adoptedStyleSheets): CSS-in-JS and modern themes
+// build styles with `new CSSStyleSheet(); sheet.replaceSync(css)` /
+// `sheet.replace(css)` — never a <style> element, so the DOM gates above never
+// see them. Gate the two content-set methods: park blocked CSS (neutralize the
+// url()/@import, remember the original per-sheet) and restore it on consent.
+var _fazSheetOriginalCss = window.WeakMap ? new WeakMap() : null;
+var _fazTrackedSheets = [];
+function _fazTrackSheet(sheet, css) {
+    if (_fazSheetOriginalCss) _fazSheetOriginalCss.set(sheet, css);
+    if (_fazTrackedSheets.indexOf(sheet) === -1) _fazTrackedSheets.push(sheet);
+}
+function _fazUntrackSheet(sheet) {
+    if (_fazSheetOriginalCss) _fazSheetOriginalCss.delete(sheet);
+    var idx = _fazTrackedSheets.indexOf(sheet);
+    if (idx !== -1) _fazTrackedSheets.splice(idx, 1);
+}
+function _fazGateConstructableSheetMethod(methodName) {
+    var proto = window.CSSStyleSheet && CSSStyleSheet.prototype;
+    if (!proto || typeof proto[methodName] !== "function") return;
+    var native = proto[methodName];
+    Object.defineProperty(proto, methodName, {
+        configurable: true,
+        writable: true,
+        enumerable: true,
+        value: function (css) {
+            var s = String(css == null ? "" : css);
+            try {
+                if (_fazStore._block && s && _fazCssShouldBlock(s)) {
+                    _fazTrackSheet(this, s);
+                    // replace() returns a Promise, replaceSync() undefined — native
+                    // return value is preserved.
+                    return native.call(this, _fazNeutralizeCssUrls(s));
+                }
+                _fazUntrackSheet(this);
+            } catch (_e) { /* fall through to native on any error */ }
+            return native.call(this, s);
+        }
+    });
+}
+if (_fazAggressiveCssUrlBlockingEnabled()) {
+    _fazGateConstructableSheetMethod("replaceSync");
+    _fazGateConstructableSheetMethod("replace");
+}
+
+function _fazRestoreConstructableSheets() {
+    if (!_fazTrackedSheets.length || !_fazSheetOriginalCss) return;
+    // Snapshot before iterating: sheet.replaceSync() below re-enters the gate,
+    // which untracks the sheet via _fazTrackedSheets.splice() — mutating the
+    // array mid-walk would skip every other sheet. Iterate the snapshot and
+    // overwrite the live list with `remaining` at the end.
+    var sheets = _fazTrackedSheets.slice();
+    var remaining = [];
+    for (var i = 0; i < sheets.length; i++) {
+        var sheet = sheets[i];
+        var original = _fazSheetOriginalCss.get(sheet);
+        if (original && !_fazCssShouldBlock(original)) {
+            // replaceSync re-enters the gate, which now sees the consented CSS as
+            // non-blocking and untracks it via the native path.
+            try { sheet.replaceSync(original); } catch (_e) { remaining.push(sheet); }
+        } else if (original) {
+            remaining.push(sheet); // still blocked (mixed categories) — keep tracked
+        }
+    }
+    _fazTrackedSheets = remaining;
+}
+
 const _fazCreateElementBackup = document.createElement;
 document.createElement = (...args) => {
     const createdElement = _fazCreateElementBackup.call(document, ...args);
@@ -3614,6 +4131,22 @@ function _fazUnblockServerSide() {
             if (!el.getAttribute("href")) return; // gate re-parked it — stay parked, recoverable
             el.removeAttribute("data-faz-href");
         });
+
+    // 4b. Inline CSS whose url()/@import tokens were neutralised server-side or
+    // by the HTMLStyleElement runtime gate. Restore only when the ORIGINAL CSS no
+    // longer contains any blocked provider URL; this avoids restoring a mixed
+    // functional+marketing style block after only one category was accepted.
+    document.querySelectorAll('style[data-faz-css]')
+        .forEach(function (el) {
+            var css = _fazBase64DecodeUtf8(el.getAttribute("data-faz-css") || "");
+            if (!css || _fazCssShouldBlock(css)) return;
+            el.removeAttribute("data-faz-css");
+            el.removeAttribute("data-faz-category");
+            el.textContent = css;
+        });
+
+    // 4b. Constructable Stylesheets parked at build time (adoptedStyleSheets).
+    _fazRestoreConstructableSheets();
 
     // 5. Deferred scripts with data-faz-waitfor (script dependency chains).
     // Usage: <script data-faz-waitfor="analytics" src="..."> loads only after
