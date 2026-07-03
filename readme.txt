@@ -326,6 +326,8 @@ and on the GitHub Releases page:
 https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
 
 = 1.22.0 =
+* Added: inline-CSS url()/@import blocking before consent — a Google Fonts @font-face src url() or @import in a <style> tag previously reached the provider with consent denied; any url()/@import pointing at a blocked provider in a denied category is now neutralised (inert data: placeholder, restored on consent). Server-rendered <style> and direct runtime HTMLStyleElement writes are covered by default; a new opt-in "Advanced inline CSS URL blocking" setting (default off) additionally hooks page-builder/CSS-in-JS channels (innerHTML/insertAdjacentHTML, CharacterData incl. nodeValue/replaceWith, replaceChildren/insertAdjacentText, Constructable Stylesheets/insertRule).
+* Added: wider runtime resource blocking for <img>/<iframe>/<link>/<source> (extends #163/#167) — beyond the src/href property setters, the setAttribute('src'|'href'|'srcset') path and the srcset property setter are gated, blocked <source> src/srcset are parked, and the MutationObserver also parks parsed img/link/source.
 * Added: Advanced Consent Mode for Google Consent Mode v2 (#165) — opt-in (default off); the Google tag stack (gtag.js/GA4/Ads) may load before consent with a synchronous denied consent default, while non-Google trackers and the GTM container stay blocked.
 * Added: manual service registration from the built-in catalogue (#161) — register a known provider's cookies into the declaration table from the Cookies page without a scan.
 * Fixed: map tiles, lazy-loaded embeds and runtime-injected stylesheets now blocked before consent (#163, #167). Leaflet/OpenStreetMap and Bricks Map tiles load as runtime <img>, Bricks lazy-load swaps a URL into iframe.src, and Web Font Loader injects a Google Fonts <link> at runtime — all bypassed the blocker. The src/href property setters are now gated on the image, iframe and link prototypes: a cross-origin resource matching a blocked provider in a denied category is parked until consent, then restored.
@@ -430,14 +432,6 @@ https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases
 * Fix: Frontend focus-trap listener accumulation (issue #124). Reopening the preference center repeatedly no longer stacks keydown handlers; `_fazAttachFocusLoop` now tracks attached handlers per `(element, direction)` slot in a module-scope WeakMap and replaces previous listeners before attaching new ones.
 * Fix: Plugin Check compatibility — removed `wp_cache_flush_group()` / `wp_cache_supports()` fast-path on cache invalidation (both require WP 6.1+, plugin minimum stays at WP 5.0). Manual `wp_cache_delete` loop replaces it; cache epoch bump on the line above is what actually invalidates live reads.
 * Compatibility: verified against WordPress 7.0 (May 2026 final). No code changes required: plugin does not use `the_author_meta`/`get_the_author_link`, all three Gutenberg blocks already declare `api_version: 3`, plugin does not bundle CodeMirror nor use the Interactivity API. `Tested up to` bumped to 7.0.
-
-= 1.15.0 =
-* Feature: Geo-routing v2 — jurisdictional rule-sets. 47 ruleset JSON files cover EU (gdpr-strict + 7 country-specific), UK (uk-gdpr-pecr), 19 US states with privacy law (CCPA + CPA + CTDPA + VCDPA + UCPA + ICDPA + TIPA + MCDPA + TDPSA + OCPA + FDBR + Delaware + NJDPL + NHPL + KCDPA + MODPA + MCDPA + RIDTPPA + ICDPA), 18 international (LGPD/PIPL/APPI/PIPA/POPIA/PDPA-Singapore/Thailand/Vietnam/India/Malaysia/AU/NZ/UAE/KSA/Israel/Turkey/Canada/Quebec Law 25), plus most-protective fallback for unknown / VPN visitors.
-* Feature: New `admin/modules/geo-routing/` module with REST API (`/faz/v1/geo/*`), admin tab UI (status / coverage / overrides / preview / ipinfo / PIPL), field-by-field per-country override editor using dot-notation deltas.
-* Feature: VPN/proxy/Tor detection via ipinfo.io (opt-in, gated by admin DPF/SCC attestation). When VPN detected, the most-protective ruleset is forced regardless of apparent country. API key encrypted at rest.
-* Feature: PIPL cross-border attestation UI (audit-trail only).
-* Migration: `wp_faz_consent_logs` schema gains 7 NULL-default columns (`country_at_consent`, `region_at_consent`, `ruleset_id_at_consent`, `signal_gpc_received`, `signal_dnt_received`, `tc_string`, `gpp_string`). Online DDL on MySQL 5.7.6+ / MariaDB 10.3+.
-* External Services: new `ipinfo.io` entry documents the opt-in VPN detection lookup.
 
 = Older versions =
 Older releases (1.14.x and earlier) are listed in the full changelog on GitHub, linked at the top of this section.
