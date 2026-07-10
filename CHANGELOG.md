@@ -2,6 +2,12 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
+## [1.23.0]
+
+### Added
+- **"Box (centered)" banner type.** Positions the consent box in the centre of the viewport via a CSS transform, a common layout on European sites. The centred popup has no corner-position choice, disables the Sidebar preference-center option (it has no sidebar template, like the corner Box), and falls back to a popup preference center; Pushdown is not offered.
+- **"Dim the page behind the banner" option.** A semi-transparent overlay greys out the page to draw attention to the banner. The overlay is a **visual cue only** — it is rendered with `pointer-events: none` and `aria-hidden="true"`, so it never blocks reading, scrolling, or clicking and does **not** act as a cookie wall (consent stays freely given, per GDPR/EDPB). Available for Box corner, Box centered, and Full-width Banner types; automatically disabled for the Classic layout, enforced client-side, in the REST sanitizer, and in the frontend data pipeline so a direct API write cannot leave a stale overlay on a Classic banner. Default off.
+
 ## [1.22.0] — 2026-07-03
 
 ### Added

@@ -193,10 +193,10 @@ defined( 'ABSPATH' ) || exit;
 				<div class="faz-form-group" id="faz-soft-cookie-wall-group">
 					<label class="faz-toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
 						<input type="checkbox" id="faz-b-soft-cookie-wall" style="width:auto;">
-						<?php esc_html_e( 'Show as soft cookie wall', 'faz-cookie-manager' ); ?>
+						<?php esc_html_e( 'Dim the page behind the banner', 'faz-cookie-manager' ); ?>
 					</label>
-					<div class="faz-help"><?php esc_html_e( 'Dims the page behind the banner. Visitors can read and scroll the page but cannot interact with it (links, buttons) until they make a consent choice.', 'faz-cookie-manager' ); ?></div>
-					<div class="faz-help" style="margin-top:4px;">&#9888; <?php esc_html_e( 'Cookie-wall patterns carry EU consent-validity risk under GDPR/EDPB guidance. Enable only after legal review.', 'faz-cookie-manager' ); ?></div>
+					<div class="faz-help"><?php esc_html_e( 'Greys out the page to draw attention to the banner. The page stays fully usable — visitors can still read, scroll, and click links while the banner is shown; the overlay is a visual cue only and never blocks interaction.', 'faz-cookie-manager' ); ?></div>
+					<div class="faz-help" style="margin-top:4px;">&#9888; <?php esc_html_e( 'Keep this as a visual cue only. An overlay that blocked interaction would act as a cookie wall, which carries EU consent-validity risk under GDPR/EDPB guidance (consent must stay freely given).', 'faz-cookie-manager' ); ?></div>
 				</div>
 			</div>
 		</div>
