@@ -239,6 +239,15 @@ class Template {
 			if ( isset( $this->properties['config']['categoryPreview'] ) ) {
 				$this->properties['config']['categoryPreview']['status'] = true;
 			}
+		} elseif ( $this->type === 'popup' ) {
+			// The centred popup reuses the Box HTML (a modal — no preference-wrapper
+			// for pushdown expansion, and no sidebar variant), so it only supports
+			// the popup preference center. Normalise any pushdown / sidebar ptype that
+			// reached this far via REST or import to popup, mirroring the admin UI's
+			// fallback, so the cached config never bakes an impossible combination.
+			if ( $this->ptype === 'pushdown' || strpos( $this->ptype, 'sidebar' ) !== false ) {
+				$this->ptype = 'popup';
+			}
 		}
 		$this->theme = isset( $settings['theme'] ) ? $settings['theme'] : 'light';
 
