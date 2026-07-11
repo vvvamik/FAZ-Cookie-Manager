@@ -563,9 +563,10 @@ Value format: `consentid:{base64},consent:yes,action:yes,necessary:yes,functiona
 
 Only the most recent release is listed here. The complete history is in [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog format) and on the [GitHub Releases page](https://github.com/fabiodalez-dev/FAZ-Cookie-Manager/releases).
 
-### 1.23.0 — 2026-07-06
+### 1.23.0 — 2026-07-11
 - **Added**: "Box (centered)" banner type - positions the consent box in the centre of the screen via CSS transform, a common pattern on European sites.
-- **Added**: soft cookie wall option - when enabled, a semi-transparent overlay dims the page behind the banner until the visitor makes a choice (works with Box corner, Box centered, and Full-width Banner types).
+- **Added**: "Dim the page behind the banner" option - a semi-transparent overlay greys out the page to draw attention to the banner. The overlay is a visual cue only (`pointer-events: none`) and never blocks reading, scrolling, or clicking, so it does not act as a cookie wall. Available for Box corner, Box centered, and Full-width Banner types; automatically disabled for the Classic layout. Default off.
+- **Changed**: geo-routing admin clarity (#178–#182) - corrected the misleading "automatic per-country" copy (runtime rule-set application is off; the catalogue is preview/reference only, while per-country banner selection still works), exposed the runtime off-state in `/geo/status`, and finished i18n of the Pipeline-status panel.
 
 ### 1.22.0 — 2026-07-03
 - **Added**: inline-CSS `url()` / `@import` blocking before consent. A Google Fonts `@font-face { src: url(fonts.gstatic.com…) }` or `@import "fonts.googleapis.com…"` printed in a `<style>` tag previously reached the provider with consent denied. Any `url()` / `@import` pointing at a blocked provider in a denied category is now neutralised (swapped for an inert `data:` placeholder, restored on consent). Server-rendered `<style>` and direct runtime `HTMLStyleElement` writes are covered by default; a new opt-in **"Advanced inline CSS URL blocking"** setting (default off) additionally hooks the broader runtime channels (`innerHTML` / `insertAdjacentHTML`, `CharacterData` edits including `.nodeValue` / `replaceWith`, `replaceChildren` / `insertAdjacentText`, and Constructable Stylesheets / `insertRule`) used by page builders and CSS-in-JS libraries.

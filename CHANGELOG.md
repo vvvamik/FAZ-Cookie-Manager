@@ -2,11 +2,14 @@
 
 All notable changes to FAZ Cookie Manager are documented in this file.
 
-## [1.23.0]
+## [1.23.0] — 2026-07-11
 
 ### Added
 - **"Box (centered)" banner type.** Positions the consent box in the centre of the viewport via a CSS transform, a common layout on European sites. The centred popup has no corner-position choice, disables the Sidebar preference-center option (unlike the corner Box, the centred popup has no sidebar template), and falls back to a popup preference center; Pushdown is not offered.
 - **"Dim the page behind the banner" option.** A semi-transparent overlay greys out the page to draw attention to the banner. The overlay is a **visual cue only** — it is rendered with `pointer-events: none` and `aria-hidden="true"`, so it never blocks reading, scrolling, or clicking and does **not** act as a cookie wall (consent stays freely given, per GDPR/EDPB). Available for Box corner, Box centered, and Full-width Banner types; automatically disabled for the Classic layout, enforced client-side (editor reset) and at render time (the frontend data pipeline plus `apply_runtime_layout_compatibility()`), so a Classic banner never renders the overlay even if a direct API write persisted the flag. Default off.
+
+### Changed
+- **Geo-routing admin clarity (#178–#182).** Corrected the misleading "automatic per-country" copy: runtime application of a rule-set to the live banner (consent model, GPC, Do-Not-Sell) is off — the ruleset catalogue is preview/reference only — while per-country banner *selection* still works. The runtime off-state is now exposed in the `/geo/status` REST payload, and the remaining Pipeline-status strings are routed through the i18n helper (JS fallback kept in sync with the PHP copy).
 
 ## [1.22.0] — 2026-07-03
 
