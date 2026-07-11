@@ -32,6 +32,48 @@ import { wpEval } from './wp-env';
  * No-op (silent) when WP_PATH is unset — wpEval throws a clear error from any
  * spec that genuinely needs WP-CLI, so we don't double-report here.
  */
+/**
+ * Full known-good baseline reset for a spec file's beforeAll.
+ *
+ * resetDefaultBannerState() only covers the default banner row. Several specs
+ * also mutate GLOBAL options that leak the same way: faz_gcm_settings (the
+ * gcm/gacm specs turn GCM on and configure default signals) and
+ * faz_settings.geolocation.geo_targeting (the geo specs flip the runtime gate).
+ * A spec that captures the option at beforeAll and "restores" it in afterAll
+ * actually restores whatever polluted value the PREVIOUS spec left, so the
+ * pollution propagates down the alphabetical run. resetBaseline() restores the
+ * option axes to the same known-good baseline global-setup.ts establishes once,
+ * so every file that calls it starts from a clean slate regardless of run order.
+ *
+ * Idempotent, cheap, and a silent no-op when WP_PATH is unset. Call it in a
+ * beforeAll (before the spec's own setup) in any spec that presupposes the
+ * default GDPR box banner with GCM off and geo-routing off.
+ */
+export function resetBaseline(): void {
+  if ( ! process.env.WP_PATH ) {
+    return;
+  }
+  resetDefaultBannerState();
+  wpEval( `
+    // GCM off — the plugin treats a missing/empty faz_gcm_settings as disabled,
+    // which is the shipped default and the baseline the non-GCM specs expect.
+    delete_option( 'faz_gcm_settings' );
+
+    // Geo runtime gate off (mirrors global-setup.ts). Preserve the rest of
+    // faz_settings — only the geolocation.geo_targeting axis is a known polluter.
+    $faz_settings = get_option( 'faz_settings', array() );
+    if ( ! is_array( $faz_settings ) ) { $faz_settings = array(); }
+    if ( ! isset( $faz_settings['geolocation'] ) || ! is_array( $faz_settings['geolocation'] ) ) {
+      $faz_settings['geolocation'] = array();
+    }
+    $faz_settings['geolocation']['geo_targeting'] = false;
+    update_option( 'faz_settings', $faz_settings );
+
+    delete_option( 'faz_banner_template' );
+    if ( function_exists( 'faz_clear_banner_template_cache' ) ) { faz_clear_banner_template_cache(); }
+  ` );
+}
+
 export function resetDefaultBannerState(): void {
   if (!process.env.WP_PATH) return;
   wpEval(`

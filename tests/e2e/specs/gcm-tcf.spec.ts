@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures/wp-fixture';
 import { clickFirstVisible } from '../utils/ui';
 import { wpEval } from '../utils/wp-env';
+import { resetBaseline } from '../utils/seed-defaults';
 
 type GcmLayerEntry = [string, unknown?, unknown?];
 type GcmScenario = {
@@ -126,6 +127,13 @@ function expectConsentUpdate(layer: Awaited<ReturnType<typeof readGcmLayer>>, ex
 
 test.describe('GCM and IAB TCF behavior', () => {
   test.describe.configure({ mode: 'serial' });
+
+  // Start from a clean banner + GCM baseline regardless of what earlier specs
+  // in the serial run left behind (a prior GCM spec's enabled config, a banner
+  // flipped to classic/ccpa, etc.), so these tests aren't hostage to run order.
+  test.beforeAll(() => {
+    resetBaseline();
+  });
 
   test('GCM default consent is denied when feature is enabled', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });

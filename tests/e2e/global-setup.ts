@@ -171,6 +171,14 @@ async function globalSetup(): Promise<void> {
         update_option( 'faz_settings', $faz_settings );
         delete_transient( 'faz_dismiss_redundant_geo_routing' );
 
+        // Reset the GCM/GACM config once per run. The gcm/tcf specs enable GCM
+        // and configure default signals; a spec that captures faz_gcm_settings
+        // in beforeAll and "restores" it in afterAll otherwise restores the
+        // polluted value the previous GCM spec left, propagating it down the
+        // serial run. The plugin treats a missing option as GCM-disabled, which
+        // is the shipped default and the baseline the non-GCM specs expect.
+        delete_option( 'faz_gcm_settings' );
+
         delete_option( 'faz_banner_template' );
         if ( function_exists( 'faz_clear_banner_template_cache' ) ) {
           faz_clear_banner_template_cache();
