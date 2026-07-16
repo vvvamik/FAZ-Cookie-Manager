@@ -128,6 +128,46 @@ if ( ! function_exists( 'faz_wpml_language_in_url' ) ) {
 	}
 }
 
+if ( ! function_exists( 'faz_trp_language_in_url' ) ) {
+
+	/**
+	 * Whether TranslatePress is active. TranslatePress ALWAYS encodes the
+	 * language in the URL: non-default languages live in a subdirectory
+	 * (/de/, /fr/) and $TRP_LANGUAGE is derived from that URL by its
+	 * URL-converter — there is no cookie/parameter negotiation mode. So, exactly
+	 * like Polylang, each language is a distinct URL and a URL-keyed page/CDN
+	 * cache stores one entry per language; resolving the TranslatePress language
+	 * is therefore cache-safe even under Cache Compatibility Mode.
+	 *
+	 * (Verified against translatepress-multilingual's class-url-converter.php,
+	 * which unconditionally adds the language to the home URL.)
+	 *
+	 * @return bool
+	 */
+	function faz_trp_language_in_url() {
+		return defined( 'TRP_PLUGIN_VERSION' ) || class_exists( 'TRP_Translate_Press' );
+	}
+}
+
+if ( ! function_exists( 'faz_weglot_language_in_url' ) ) {
+
+	/**
+	 * Whether Weglot is active. Weglot resolves the current language from the
+	 * request URL — a language subdirectory (/fr/, /de/), or a subdomain on paid
+	 * plans — through its Request_Url_Service, never from a cookie. Each language
+	 * is thus URL-keyed and cache-safe even under Cache Compatibility Mode, just
+	 * like Polylang and TranslatePress.
+	 *
+	 * (Verified against weglot/weglot-functions.php ::weglot_get_current_language(),
+	 * which delegates to Request_Url_Service_Weglot::get_current_language().)
+	 *
+	 * @return bool
+	 */
+	function faz_weglot_language_in_url() {
+		return defined( 'WEGLOT_VERSION' ) || function_exists( 'weglot_get_current_language' );
+	}
+}
+
 if ( ! function_exists( 'faz_current_language' ) ) {
 	/**
 	 * Returns the current language code of the site.
@@ -182,17 +222,20 @@ if ( ! function_exists( 'faz_current_language' ) ) {
 				if ( empty( $current_language ) ) {
 					$current_language = pll_default_language();
 				}
-			} elseif ( ! $cache_compatibility && ( defined( 'TRP_PLUGIN_VERSION' ) || class_exists( 'TRP_Translate_Press' ) ) ) {
-				// TranslatePress: read the global language variable. Skipped
-				// under cache-compat — $TRP_LANGUAGE can be cookie/session-based
-				// and would poison the shared cached render.
+			} elseif ( faz_trp_language_in_url() ) {
+				// TranslatePress. It always encodes the language in the URL
+				// (non-default languages in a subdirectory), so — exactly like
+				// Polylang above — a URL-keyed cache stores one entry per language
+				// and $TRP_LANGUAGE is safe to read even under Cache Compatibility
+				// Mode. faz_trp_language_in_url() is true whenever TRP is active.
 				global $TRP_LANGUAGE;
 				if ( ! empty( $TRP_LANGUAGE ) ) {
 					$current_language = substr( $TRP_LANGUAGE, 0, 2 );
 				}
-			} elseif ( ! $cache_compatibility && function_exists( 'weglot_get_current_language' ) ) {
-				// Weglot: use the helper function. Skipped under cache-compat
-				// for the same per-visitor-variation reason as TranslatePress.
+			} elseif ( faz_weglot_language_in_url() ) {
+				// Weglot. Resolves the language from the request URL
+				// (subdirectory/subdomain), never a cookie, so it is URL-keyed
+				// and cache-safe even under Cache Compatibility Mode.
 				$current_language = weglot_get_current_language();
 			} elseif ( ! $cache_compatibility || faz_wpml_language_in_url() ) {
 				// WPML. Normally skipped under cache-compat: WPML's

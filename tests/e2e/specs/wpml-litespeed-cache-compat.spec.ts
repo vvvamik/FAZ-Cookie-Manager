@@ -93,6 +93,9 @@ test.beforeAll(() => {
   // Snapshot faz_settings so afterAll can restore the shared env verbatim.
   savedSettings = wpEval(`echo wp_json_encode( get_option( 'faz_settings', array() ) );`).trim();
 
+  // The lab's WPML emulation is opt-in (specs exercising a REAL multilingual
+  // plugin activate the same fixture purely for its probe headers).
+  setOption('faz_e2e_wpml_emulate', 'yes');
   wp(['plugin', 'activate', 'litespeed-cache']);
   ensureFixturePlugin('faz-e2e-wpml-litespeed-lab');
 
@@ -120,7 +123,11 @@ test.afterAll(() => {
     `);
   }
   try {
-    wpEval(`delete_option( 'faz_e2e_wpml_negotiation' ); delete_option( 'faz_e2e_ls_purge_count' );`);
+    wpEval(`
+      delete_option( 'faz_e2e_wpml_negotiation' );
+      delete_option( 'faz_e2e_ls_purge_count' );
+      delete_option( 'faz_e2e_wpml_emulate' );
+    `);
   } catch {
     /* best-effort */
   }

@@ -28,55 +28,63 @@ if ( ! defined( 'ABSPATH' ) ) {
  * language from the wpml_current_language filter.
  */
 
-if ( ! defined( 'ICL_LANGUAGE_CODE' ) ) {
-	define( 'ICL_LANGUAGE_CODE', 'en' );
-}
+// OPT-IN: only emulate WPML when a spec asks for it. Specs that exercise a REAL
+// multilingual plugin (e.g. TranslatePress) activate this fixture purely for its
+// probe headers and must not have a phantom WPML in the mix — TRP/Weglot sit
+// before WPML in faz_current_language()'s chain, so a stray emulation would
+// muddy which branch is under test.
+if ( 'yes' === get_option( 'faz_e2e_wpml_emulate', 'no' ) ) {
 
-if ( ! class_exists( 'SitePress' ) ) {
-	/** WPML core class — faz_wpml_language_in_url() also accepts its presence. */
-	class SitePress {}
-}
-
-if ( ! function_exists( 'faz_e2e_wpml_current_lang' ) ) {
-	/**
-	 * The language WPML would report for this request.
-	 *
-	 * @return string
-	 */
-	function faz_e2e_wpml_current_lang() {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only test probe.
-		$lang = isset( $_GET['wpmllang'] ) ? sanitize_key( wp_unslash( $_GET['wpmllang'] ) ) : 'en';
-		return $lang ? $lang : 'en';
+	if ( ! defined( 'ICL_LANGUAGE_CODE' ) ) {
+		define( 'ICL_LANGUAGE_CODE', 'en' );
 	}
-}
 
-add_filter(
-	'wpml_current_language',
-	static function () {
-		return faz_e2e_wpml_current_lang();
+	if ( ! class_exists( 'SitePress' ) ) {
+		/** WPML core class — faz_wpml_language_in_url() also accepts its presence. */
+		class SitePress {}
 	}
-);
 
-add_filter(
-	'wpml_default_language',
-	static function () {
-		return 'en';
-	}
-);
-
-// WPML exposes settings through apply_filters('wpml_setting', $default, $key).
-add_filter(
-	'wpml_setting',
-	static function ( $value, $key = '' ) {
-		if ( 'language_negotiation_type' === $key ) {
-			$mode = (int) get_option( 'faz_e2e_wpml_negotiation', 1 );
-			return $mode > 0 ? $mode : 1;
+	if ( ! function_exists( 'faz_e2e_wpml_current_lang' ) ) {
+		/**
+		 * The language WPML would report for this request.
+		 *
+		 * @return string
+		 */
+		function faz_e2e_wpml_current_lang() {
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only test probe.
+			$lang = isset( $_GET['wpmllang'] ) ? sanitize_key( wp_unslash( $_GET['wpmllang'] ) ) : 'en';
+			return $lang ? $lang : 'en';
 		}
-		return $value;
-	},
-	10,
-	2
-);
+	}
+
+	add_filter(
+		'wpml_current_language',
+		static function () {
+			return faz_e2e_wpml_current_lang();
+		}
+	);
+
+	add_filter(
+		'wpml_default_language',
+		static function () {
+			return 'en';
+		}
+	);
+
+	// WPML exposes settings through apply_filters('wpml_setting', $default, $key).
+	add_filter(
+		'wpml_setting',
+		static function ( $value, $key = '' ) {
+			if ( 'language_negotiation_type' === $key ) {
+				$mode = (int) get_option( 'faz_e2e_wpml_negotiation', 1 );
+				return $mode > 0 ? $mode : 1;
+			}
+			return $value;
+		},
+		10,
+		2
+	);
+}
 
 /*
  * ---- Observability -------------------------------------------------------
@@ -93,6 +101,12 @@ add_action(
 		}
 		if ( function_exists( 'faz_wpml_language_in_url' ) ) {
 			header( 'X-Faz-Wpml-Url-Safe: ' . ( faz_wpml_language_in_url() ? '1' : '0' ) );
+		}
+		if ( function_exists( 'faz_trp_language_in_url' ) ) {
+			header( 'X-Faz-Trp-Url-Safe: ' . ( faz_trp_language_in_url() ? '1' : '0' ) );
+		}
+		if ( function_exists( 'faz_weglot_language_in_url' ) ) {
+			header( 'X-Faz-Weglot-Url-Safe: ' . ( faz_weglot_language_in_url() ? '1' : '0' ) );
 		}
 	},
 	99999

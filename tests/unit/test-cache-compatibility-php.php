@@ -426,48 +426,17 @@ namespace {
 		'absent cache_compatibility key + no trigger → not country-dependent'
 	);
 
-	// --- F001 (#158): the MULTILINGUAL branch of faz_current_language() is
-	// gated under cache-compat. TranslatePress ($TRP_LANGUAGE) and Weglot
-	// resolve language from cookie/session state, which would vary the cached
-	// banner store per visitor on a shared URL. Defined LAST so the multilingual
-	// flag doesn't perturb the country-dependent assertions above.
-	if ( ! defined( 'TRP_PLUGIN_VERSION' ) ) {
-		define( 'TRP_PLUGIN_VERSION', '2.0.0' );
-	}
-	$GLOBALS['TRP_LANGUAGE']                      = 'it_IT';
-	$GLOBALS['faz_test_options']['faz_settings']  = array(
-		'languages'      => array(
-			'default'  => 'en',
-			'selected' => array( 'en', 'it' ),
-		),
-		'banner_control' => array( 'cache_compatibility' => false ),
-	);
-	faz_current_language( true );
-	assert_eq(
-		faz_current_language(),
-		'it',
-		'cache_compatibility OFF → TranslatePress cookie/session language is honoured (unchanged)'
-	);
-	$GLOBALS['faz_test_options']['faz_settings']['banner_control']['cache_compatibility'] = true;
-	faz_current_language( true );
-	assert_eq(
-		faz_current_language(),
-		'en',
-		'cache_compatibility ON → TranslatePress language is gated; render stays default-stable (#158)'
-	);
-	$GLOBALS['faz_test_filters'] = array(
-		'wpml_current_language' => array(
-			function () {
-				return 'it';
-			},
-		),
-	);
-	faz_current_language( true );
-	assert_eq(
-		faz_current_language(),
-		'en',
-		'cache_compatibility ON → WPML cookie-mode fallback is gated; render stays default-stable (#160)'
-	);
+	// --- MULTILINGUAL under cache-compat.
+	//
+	// The WPML assertions live at the END of this file (constants like
+	// ICL_LANGUAGE_CODE can't be undefined, so they're declared last to keep the
+	// country-dependent assertions above free of the multilingual flag).
+	//
+	// TranslatePress and Weglot are covered by their own isolated harness,
+	// tests/unit/test-trp-weglot-cache-compat-php.php: both sit BEFORE WPML in
+	// faz_current_language()'s elseif chain, so activating either here (via a
+	// constant that can never be undefined) would shadow the WPML branch for the
+	// rest of the process and make the WPML assertions below untestable.
 
 	// ---------------------------------------------------------------------
 	// FlyingPress bridge (issue #125): flying_press_is_cacheable() vetoes
