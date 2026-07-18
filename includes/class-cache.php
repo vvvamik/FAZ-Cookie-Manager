@@ -299,42 +299,40 @@ class Cache {
 		// call safe; delete_cache() alone remains available for object-cache-only
 		// invalidation, and delete() now delegates here so nothing rotates twice.
 		//
-		// Read the prefix BEFORE delete_cache(): delete_cache() → reset_prefix_cache()
-		// drops the memoized transient prefix, so reading it afterwards would force a
-		// redundant get_transient() round-trip. delete_cache() rotates only the
-		// object-cache prefix (not the transient seed), so the value is identical
-		// either way — this just reuses the in-memory copy.
-		$prefix     = self::get_transient_prefix( $group );
+		// Capture the old transient prefix for the best-effort physical cleanup,
+		// then publish the NEW transient epoch BEFORE the new object-cache epoch.
+		// The order is a correctness requirement, not just an optimisation:
+		//
+		//   1. If the object-cache epoch became visible first, a concurrent request
+		//      could miss there, read a stale payload through the still-current old
+		//      transient epoch, and promote that stale payload into the NEW object
+		//      epoch. Rotating the transient seed afterwards would not reach the
+		//      promoted copy, recreating issue #125 under load.
+		//   2. Publishing the transient epoch first may let an in-flight request
+		//      finish from the old object epoch, but it can never promote old
+		//      transient data into the new object epoch. Once delete_cache() runs,
+		//      both fresh requests and all later requests see only the new epochs.
+		//
+		// delete_cache() resets both memoized prefixes after rotating the object
+		// seed, so the next lookup resolves the two freshly-published epochs.
+		$prefix = self::get_transient_prefix( $group );
+		set_transient( 'faz_' . $group . '_transient_prefix', microtime() );
 		self::delete_cache( $group );
+
 		$transients = self::get_transient_keys_with_prefix( $prefix );
 		foreach ( $transients as $key ) {
 			delete_transient( $key );
 		}
 
-		// The wp_options scan above only reaches DB-backed transients. With
-		// a persistent object-cache drop-in (Redis Object Cache, Memcached,
-		// W3TC object cache, …) transients bypass wp_options entirely, so
-		// the scan finds nothing and the stale payloads survive in the
-		// external store under the unchanged prefix. Because get() falls
-		// back from the object cache to transients, those survivors were
-		// re-promoted into the object cache after every invalidation:
-		// a banner save wrote the new row to the DB, but every subsequent
-		// read kept serving the pre-save payload (issue #125, "Cookie
-		// banner not saving" with Redis object cache active). Rotate the
-		// prefix seed itself — the same epoch-bump strategy
-		// invalidate_cache_group() uses for the object cache — so every
-		// previously written transient becomes unreachable on BOTH
-		// backends. Orphaned data payloads self-expire via TRANSIENT_TTL.
+		// The wp_options scan only reaches DB-backed transients. External-cache
+		// copies (Redis, Memcached, W3TC object cache, …) cannot be deleted by
+		// this query, but the transient epoch was already rotated above, so those
+		// payloads are unreachable and expire naturally via TRANSIENT_TTL.
 		//
-		// The seed pointer itself is written WITHOUT a TTL on purpose: it is the
-		// stable "current epoch" marker every read resolves against, so it must
-		// not expire out from under live payloads (an evicted seed would force a
-		// fresh-prefix rebuild-miss). The autoload rationale on TRANSIENT_TTL
-		// therefore covers the data payloads, not this pointer row.
-		set_transient( 'faz_' . $group . '_transient_prefix', microtime() );
-
-		// Drop the memoized prefix so the next call after the underlying
-		// transient has been invalidated upstream picks up a fresh one.
-		self::reset_prefix_cache( $group );
+		// The seed pointer itself is intentionally written WITHOUT a TTL: it is
+		// the stable current-epoch marker every read resolves against. Expiring
+		// it underneath live payloads would create an unnecessary rebuild miss.
+		// delete_cache() already reset both memoized prefixes after publishing
+		// the new object-cache epoch.
 	}
 }
