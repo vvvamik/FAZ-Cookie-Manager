@@ -106,6 +106,7 @@ class Frontend {
 	private $enforceable_cache        = null;
 	private $settings_option_cache    = null;
 	private $always_allowed_cache     = null;
+	private $all_gateway_patterns_cache = null;
 	/**
 	 * Set when runtime geo-routing resolves an opt-in jurisdiction but no
 	 * matching active banner exists, so the country-selected (opt-out) banner
@@ -3554,17 +3555,12 @@ class Frontend {
 	 * @param string $pattern Provider pattern to check.
 	 * @return bool
 	 */
-	private function is_always_allowed_gateway_pattern( $pattern ) {
+	private function gateway_pattern_matches( $pattern, $list ) {
 		$pattern = trim( (string) $pattern );
 		if ( '' === $pattern ) {
 			return false;
 		}
-
-		if ( null === $this->always_allowed_cache ) {
-			$this->always_allowed_cache = $this->get_always_allowed_gateway_patterns();
-		}
-
-		foreach ( $this->always_allowed_cache as $allowed_pattern ) {
+		foreach ( $list as $allowed_pattern ) {
 			// Forward: the provider pattern contains a gateway token.
 			if ( false !== stripos( $pattern, $allowed_pattern ) ) {
 				return true;
@@ -3577,8 +3573,62 @@ class Frontend {
 				return true;
 			}
 		}
-
 		return false;
+	}
+
+	/**
+	 * Whether a script pattern is exempt from consent BLOCKING on this request —
+	 * i.e. the gateway is opted-in OR this is a WooCommerce checkout/cart page.
+	 * Drives the script whitelist and the client-side block map, both resolved at
+	 * `wp_enqueue_scripts` where the request context is ready. Context-dependent.
+	 *
+	 * @param string $pattern
+	 * @return bool
+	 */
+	private function is_always_allowed_gateway_pattern( $pattern ) {
+		if ( null === $this->always_allowed_cache ) {
+			$this->always_allowed_cache = $this->get_always_allowed_gateway_patterns();
+		}
+		return $this->gateway_pattern_matches( $pattern, $this->always_allowed_cache );
+	}
+
+	/**
+	 * Every payment-gateway script pattern in the catalogue, regardless of opt-in
+	 * or checkout context.
+	 *
+	 * @return string[]
+	 */
+	private function get_all_payment_gateway_patterns() {
+		if ( null === $this->all_gateway_patterns_cache ) {
+			$patterns = array();
+			foreach ( self::payment_gateway_catalog() as $gateway ) {
+				$patterns = array_merge( $patterns, $gateway['patterns'] );
+			}
+			$this->all_gateway_patterns_cache = array_values( array_unique( $patterns ) );
+		}
+		return $this->all_gateway_patterns_cache;
+	}
+
+	/**
+	 * Whether a provider pattern belongs to a known payment gateway — used by the
+	 * COOKIE shredder to exempt a gateway's cookies, CONTEXT-INDEPENDENTLY.
+	 *
+	 * The shredder runs on `send_headers`, before WordPress populates the main
+	 * query, so WooCommerce conditional tags (is_checkout()/is_cart()) are not
+	 * reliable there; is_always_allowed_gateway_pattern() would wrongly report
+	 * "not on checkout" and shred a live gateway cookie (e.g. __stripe_mid) on a
+	 * real WooCommerce checkout. This full-catalogue check avoids that: a gateway
+	 * cookie can only exist if the gateway's SDK actually loaded, which happens
+	 * only when the gateway is opted-in or on a genuine checkout (both compliant
+	 * contexts) — so exempting a gateway's cookies unconditionally never protects
+	 * a tracker that ran without consent (no SDK => no cookie), while it stops the
+	 * timing-sensitive shredder from deleting a legitimate one.
+	 *
+	 * @param string $pattern
+	 * @return bool
+	 */
+	private function is_payment_gateway_pattern( $pattern ) {
+		return $this->gateway_pattern_matches( $pattern, $this->get_all_payment_gateway_patterns() );
 	}
 
 	/**
@@ -4166,13 +4216,17 @@ class Frontend {
 
 			$service_whitelisted = false;
 
-			// Always-allowed payment gateways (Stripe, etc.): their scripts run
-			// pre-consent regardless of category, so the cookies they set must
-			// also be exempt from the cookie shredder — otherwise the startup
-			// cleanup deletes a live gateway cookie (e.g. __stripe_mid) the
-			// moment it is written. This applies even with no user whitelist.
+			// Payment-gateway cookies (Stripe __stripe_mid, etc.) are exempt from
+			// the shredder. This uses the CONTEXT-INDEPENDENT catalogue check, not
+			// the opt-in/checkout one: the shredder runs on send_headers, before
+			// the main query, so WooCommerce is_checkout() is unreliable there and
+			// the context-aware check would delete a live gateway cookie on a real
+			// checkout. Exempting a gateway's cookies unconditionally is safe — a
+			// gateway cookie only exists if its SDK loaded, which happens only when
+			// the gateway is opted-in or on a genuine checkout (no SDK => no cookie
+			// to protect). Applies even with no user whitelist.
 			foreach ( $service['patterns'] as $pattern ) {
-				if ( $this->is_always_allowed_gateway_pattern( $pattern ) ) {
+				if ( $this->is_payment_gateway_pattern( $pattern ) ) {
 					$service_whitelisted = true;
 					break;
 				}

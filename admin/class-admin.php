@@ -1694,7 +1694,7 @@ class Admin {
 	 * @return void
 	 */
 	public function payment_gateway_notice() {
-		if ( ! faz_is_admin_page() ) {
+		if ( ! faz_is_admin_page() || ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
 		$user_id = get_current_user_id();

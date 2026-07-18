@@ -15,9 +15,12 @@
  *     a WooCommerce checkout/cart page. A payment SDK can track, so loading it
  *     before consent is never automatic. A gateway's marketing pixel
  *     (paypal.com/tagmanager/pptm.js) is never exempted.
- *   - Frontend::compute_whitelisted_cookie_patterns() (exempts the cookies of
- *     an opted-in / on-checkout gateway from the shredder — and NOT the cookies
- *     of a gateway that is neither, since its SDK is blocked so it sets none).
+ *   - Frontend::compute_whitelisted_cookie_patterns() (exempts a known payment
+ *     gateway's cookies from the shredder CONTEXT-INDEPENDENTLY — the shredder
+ *     runs at send_headers where WooCommerce is_checkout() is unreliable, and a
+ *     gateway cookie only exists if its SDK loaded, so this can't protect a
+ *     tracker that ran without consent while it stops a live checkout cookie
+ *     from being deleted).
  *
  * Pure-logic: no browser, no DB, no live WordPress. Frontend is built with
  * ReflectionClass::newInstanceWithoutConstructor(); the settings option is
@@ -176,29 +179,30 @@ namespace {
 
 	$valid = array( 'marketing', 'analytics' );
 
-	// A gateway's cookies are exempt from the shredder ONLY when the gateway is
-	// opted in (its SDK then loads and legitimately sets them).
-	$set_gateways( array( 'stripe' => true ) );
+	// The cookie shredder exempts a payment gateway's cookies CONTEXT-INDEPENDENTLY
+	// (full catalogue), NOT gated on the opt-in/checkout state. The shredder runs
+	// on send_headers, before the main query, where WooCommerce is_checkout() is
+	// unreliable — so a context-aware check would delete a live gateway cookie
+	// (e.g. __stripe_mid) on a real checkout. A gateway cookie only exists if its
+	// SDK loaded (opt-in or checkout), so exempting them unconditionally protects
+	// nothing that ran without consent.
+	$set_gateways( array() ); // no gateway opted in, not a WooCommerce checkout
 	$GLOBALS['__faz_providers'] = array( $stripe, $ga );
 	$res = $wl( array(), $valid );
 	check(
 		in_array( '__stripe_mid', $res, true ) && in_array( '__stripe_sid', $res, true ),
-		'10 opted-in gateway cookies exempt with empty user whitelist (__stripe_mid/__stripe_sid)'
+		'10 gateway cookies exempt from the shredder even with no gateway opted in (context-independent)'
 	);
 	check(
 		! in_array( '_ga', $res, true ) && ! in_array( '_gid', $res, true ),
-		'11 non-gateway provider (_ga/_gid) NOT exempt without a user whitelist'
+		'11 non-gateway provider (_ga/_gid) NOT exempt'
 	);
 
-	// …but with NO gateway opted in, the gateway's cookies are NOT exempt — its
-	// SDK is blocked, so it sets nothing to protect (the compliance change).
-	$set_gateways( array() );
+	// Opting the gateway in does not change the (already unconditional) exemption.
+	$set_gateways( array( 'stripe' => true ) );
 	$GLOBALS['__faz_providers'] = array( $stripe );
 	$res = $wl( array(), $valid );
-	check(
-		! in_array( '__stripe_mid', $res, true ) && array() === $res,
-		'12 gateway cookies NOT exempt when the gateway is not opted in'
-	);
+	check( in_array( '__stripe_mid', $res, true ), '12 gateway-cookie exemption is unchanged by the opt-in toggle' );
 
 	// The admin user-whitelist path still works (token matches a provider pattern).
 	$set_gateways( array() );
@@ -207,7 +211,6 @@ namespace {
 	check( in_array( '_fbp', $res, true ), '13 user whitelist token fbevents whitelists _fbp' );
 
 	// A necessary-category provider is always skipped (even on a gateway match).
-	$set_gateways( array( 'stripe' => true ) );
 	$GLOBALS['__faz_providers'] = array( $necessary );
 	$res = $wl( array(), $valid );
 	check( ! in_array( 'sess_x', $res, true ) && array() === $res, '14 necessary-category provider excluded' );
