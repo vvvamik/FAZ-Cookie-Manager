@@ -2995,6 +2995,16 @@ function _fazGateSrcSetter(proto, hideOnPark) {
                     // consent); leave parked <img> visible so a map widget's tile
                     // layout / positioning is not disturbed.
                     if (hideOnPark && this.classList) this.classList.add("faz-hidden");
+                    // Reveal the per-service toggle for a JS-parked embed. The
+                    // MutationObserver reveal path (_fazRevealService at block
+                    // time) never fires on this iframe — this setter parks its src
+                    // BEFORE the node is appended, so the observer reads an empty
+                    // src and skips it. Parking here is the only place a
+                    // block-first site knows the embed is present, so surface its
+                    // toggle here too (iframe-only, matching hideOnPark).
+                    // Idempotent + self-guarded (no-op until the catalogue loads).
+                    // #134/#146.
+                    if (hideOnPark) _fazRevealService(_fazResolveServiceId(String(val), (this.getAttribute && this.getAttribute("data-faz-service")) || ""));
                     return; // park the URL; issue no request until consent
                 }
             } catch (e) { /* fall through to the native setter on any error */ }
@@ -3076,6 +3086,10 @@ function _fazGateResourceSetAttribute(proto, opts) {
                     native.call(this, opts.parkAttr, String(value));
                     native.call(this, "data-faz-category", _fazImgCategory(String(value)));
                     if (opts.hideOnPark && this.classList) this.classList.add("faz-hidden");
+                    // Same runtime per-service reveal as the src-property gate: a
+                    // lazy-loader that parks the embed via setAttribute('src') is
+                    // equally invisible to the block-time observer. #134/#146.
+                    if (opts.hideOnPark) _fazRevealService(_fazResolveServiceId(String(value), (this.getAttribute && this.getAttribute("data-faz-service")) || ""));
                     return;
                 }
                 if (n === "srcset" && opts.srcset) {
