@@ -5322,7 +5322,10 @@ class Frontend {
 		// cron and reads Config::$config — mutating it there could leak the FAZ
 		// keywords into the persisted option if a cron pass re-saves the config
 		// (mirrors the wp_doing_cron() guard on flying_press_is_cacheable()).
-		if ( ! faz_is_front_end_request() || wp_doing_cron() ) {
+		// WP-CLI is excluded for the same persistence reason: FlyingPress commands
+		// such as license activation call Config::update_config() and save the whole
+		// shared static config after plugins_loaded has fired.
+		if ( ! faz_is_front_end_request() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
 			return;
 		}
 		if ( ! class_exists( '\\FlyingPress\\Config' ) || ! property_exists( '\\FlyingPress\\Config', 'config' ) ) {
