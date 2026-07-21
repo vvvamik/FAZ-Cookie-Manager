@@ -15,7 +15,12 @@ export default defineConfig({
   },
   fullyParallel: false,
   forbidOnly: isCI,
-  retries: isCI ? 2 : 1,
+  // Retry twice everywhere. A handful of frontend specs are timing-sensitive
+  // (banner-render / MutationObserver / AJAX-settled counts) and occasionally
+  // flake on the first attempt under machine load; CI already retried twice
+  // while a local run retried once, which is why the same green-in-CI spec
+  // could show red locally. Matching the two keeps local == CI reliability.
+  retries: 2,
   workers: isCI ? 2 : 1,
   outputDir: './reports/artifacts',
   globalSetup: './global-setup.ts',

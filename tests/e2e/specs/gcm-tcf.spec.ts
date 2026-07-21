@@ -2,6 +2,8 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures/wp-fixture';
 import { clickFirstVisible } from '../utils/ui';
 import { wpEval } from '../utils/wp-env';
+import { resetBaseline } from '../utils/seed-defaults';
+import { acquireSharedWordPressLock, releaseSharedWordPressLock } from '../utils/shared-wordpress-lock';
 
 type GcmLayerEntry = [string, unknown?, unknown?];
 type GcmScenario = {
@@ -11,6 +13,8 @@ type GcmScenario = {
   npa: number[];
   addtl: string;
 };
+
+let lockHeld = false;
 
 function parseCookieConsentTcString(tcString: string | undefined | null): { created: number; lastUpdated: number } | null {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -124,104 +128,162 @@ function expectConsentUpdate(layer: Awaited<ReturnType<typeof readGcmLayer>>, ex
   expect(update).not.toHaveProperty('wait_for_update');
 }
 
+function snapshotGcmSettings(): string {
+  const raw = wpEval(`
+    $sentinel = new stdClass();
+    $value = get_option( 'faz_gcm_settings', $sentinel );
+    echo wp_json_encode( array(
+      'exists' => $value !== $sentinel,
+      'value'  => $value !== $sentinel ? $value : array(),
+    ) );
+  `).trim();
+  return Buffer.from(raw, 'utf8').toString('base64');
+}
+
+function configureGcm(): void {
+  wpEval(`
+    $settings = array(
+      'status' => true,
+      'default_settings' => array(
+        array(
+          'ad_storage' => 'denied',
+          'analytics_storage' => 'denied',
+          'ad_user_data' => 'denied',
+          'ad_personalization' => 'denied',
+          'functionality_storage' => 'denied',
+          'personalization_storage' => 'denied',
+          'security_storage' => 'granted',
+          'analytics' => 'denied',
+          'marketing' => 'denied',
+          'functional' => 'denied',
+          'necessary' => 'granted',
+          'regions' => 'All',
+        ),
+      ),
+      'wait_for_update' => 500,
+      'url_passthrough' => true,
+      'ads_data_redaction' => true,
+      'gacm_enabled' => true,
+      'gacm_provider_ids' => '89,91,128',
+      'non_personalized_ads_fallback' => true,
+    );
+    update_option( 'faz_gcm_settings', $settings, false );
+    wp_cache_delete( 'faz_gcm_settings', 'options' );
+    if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
+      \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
+    }
+    // Admin modules are deferred outside FAZ/REST requests. Load them before
+    // mirroring GCM_Settings::update(), otherwise active page-cache adapters
+    // never see the settings hook in this WP-CLI process.
+    do_action( 'rest_api_init' );
+    do_action( 'faz_after_update_settings', $settings );
+  `);
+}
+
+function restoreGcmSettings(snapshotB64: string): void {
+  wpEval(`
+    $snapshot = json_decode( base64_decode( '${snapshotB64}' ), true );
+    if ( ! empty( $snapshot['exists'] ) ) {
+      $settings = is_array( $snapshot['value'] ) ? $snapshot['value'] : array();
+      update_option( 'faz_gcm_settings', $settings, false );
+    } else {
+      $settings = array();
+      delete_option( 'faz_gcm_settings' );
+    }
+    wp_cache_delete( 'faz_gcm_settings', 'options' );
+    if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
+      \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
+    }
+    do_action( 'rest_api_init' );
+    do_action( 'faz_after_update_settings', $settings );
+  `);
+}
+
 test.describe('GCM and IAB TCF behavior', () => {
   test.describe.configure({ mode: 'serial' });
 
+  // Start from a clean banner + GCM baseline regardless of what earlier specs
+  // in the serial run left behind (a prior GCM spec's enabled config, a banner
+  // flipped to classic/ccpa, etc.), so these tests aren't hostage to run order.
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(41 * 60_000);
+    await acquireSharedWordPressLock();
+    lockHeld = true;
+    resetBaseline();
+  });
+
+  test.afterAll(() => {
+    if (lockHeld) {
+      releaseSharedWordPressLock();
+      lockHeld = false;
+    }
+  });
+
   test('GCM default consent is denied when feature is enabled', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const gcmSettingsSnapshot = snapshotGcmSettings();
 
-    const gcm = await page.evaluate(() => {
-      // Resolve dataLayer name: plugin may use a custom name via fazSettings.
-      const dlName =
-        (window.fazSettings && typeof window.fazSettings.dataLayerName === 'string'
-          ? window.fazSettings.dataLayerName
-          : '') || 'dataLayer';
-      const dl = (window as Record<string, unknown>)[dlName];
-
-      // Use _fazGcm as the authoritative FAZ-specific GCM indicator.
-      // Generic signals (gtag, dataLayer, google_tag_data) are unreliable
-      // because other plugins (e.g. GTM4WP) create window.dataLayer
-      // independently, causing false-positive active detection even when
-      // FAZ's GCM module is disabled.
-      const active =
+    try {
+      // Prime any active page cache with the shipped GCM-off baseline. The
+      // subsequent settings notification must evict this exact HTML; otherwise
+      // a retry on a cold cache could hide the integration regression.
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      const gcmInitiallyActive = await page.evaluate(() => (
         typeof (window as Record<string, unknown>)._fazGcm === 'object' &&
-        (window as Record<string, unknown>)._fazGcm !== null;
-      if (!active) {
-        return { active: false };
-      }
+        (window as Record<string, unknown>)._fazGcm !== null
+      ));
+      expect(gcmInitiallyActive, 'the baseline page must have FAZ GCM disabled').toBe(false);
 
-      const entries = [...((dl as unknown[]) || [])];
-      // dataLayer entries from gtag() are Arguments objects (not real arrays),
-      // so we use bracket notation instead of Array.isArray().
-      const found = entries.find((entry: unknown) => {
-        if (!entry || typeof entry !== 'object') {
-          return false;
+      configureGcm();
+      await page.reload({ waitUntil: 'domcontentloaded' });
+
+      const gcm = await page.evaluate(() => {
+        // Resolve dataLayer name: plugin may use a custom name via fazSettings.
+        const dlName =
+          (window.fazSettings && typeof window.fazSettings.dataLayerName === 'string'
+            ? window.fazSettings.dataLayerName
+            : '') || 'dataLayer';
+        const dl = (window as Record<string, unknown>)[dlName];
+
+        // Use _fazGcm as the authoritative FAZ-specific GCM indicator.
+        // Generic signals (gtag, dataLayer, google_tag_data) are unreliable
+        // because other plugins (e.g. GTM4WP) create window.dataLayer
+        // independently, causing false-positive active detection even when
+        // FAZ's GCM module is disabled.
+        const active =
+          typeof (window as Record<string, unknown>)._fazGcm === 'object' &&
+          (window as Record<string, unknown>)._fazGcm !== null;
+        if (!active) {
+          return { active: false, defaults: null };
         }
-        const e = entry as Record<number, unknown>;
-        return e[0] === 'consent' && e[1] === 'default';
+
+        const entries = [...((dl as unknown[]) || [])];
+        // dataLayer entries from gtag() are Arguments objects (not real arrays),
+        // so we use bracket notation instead of Array.isArray().
+        const found = entries.find((entry: unknown) => {
+          if (!entry || typeof entry !== 'object') {
+            return false;
+          }
+          const e = entry as Record<number, unknown>;
+          return e[0] === 'consent' && e[1] === 'default';
+        });
+
+        return {
+          active: true,
+          defaults: found ? (found as Record<number, unknown>)[2] as Record<string, string> : null,
+        };
       });
 
-      return {
-        active: true,
-        defaults: found ? (found as Record<number, unknown>)[2] : null,
-      };
-    });
-
-    test.skip(!gcm.active, 'GCM not enabled in current plugin settings');
-
-    expect(gcm.defaults).toBeTruthy();
-    expect(gcm.defaults.ad_storage).toBe('denied');
-    expect(gcm.defaults.analytics_storage).toBe('denied');
+      expect(gcm.active, 'the test fixture must enable FAZ GCM').toBe(true);
+      expect(gcm.defaults).toBeTruthy();
+      expect(gcm.defaults?.ad_storage).toBe('denied');
+      expect(gcm.defaults?.analytics_storage).toBe('denied');
+    } finally {
+      restoreGcmSettings(gcmSettingsSnapshot);
+    }
   });
 
   test('GCM restores stored consent with consent update, never a second default (#149)', async ({ browser, wpBaseURL }) => {
-    const rawGcmSettings = wpEval(`echo wp_json_encode( get_option( 'faz_gcm_settings', array() ) );`);
-    const gcmSettingsB64 = Buffer.from(rawGcmSettings, 'utf8').toString('base64');
-
-    const configureGcm = () => {
-      wpEval(`
-        update_option( 'faz_gcm_settings', array(
-          'status' => true,
-          'default_settings' => array(
-            array(
-              'ad_storage' => 'denied',
-              'analytics_storage' => 'denied',
-              'ad_user_data' => 'denied',
-              'ad_personalization' => 'denied',
-              'functionality_storage' => 'denied',
-              'personalization_storage' => 'denied',
-              'security_storage' => 'granted',
-              'analytics' => 'denied',
-              'marketing' => 'denied',
-              'functional' => 'denied',
-              'necessary' => 'granted',
-              'regions' => 'All',
-            ),
-          ),
-          'wait_for_update' => 500,
-          'url_passthrough' => true,
-          'ads_data_redaction' => true,
-          'gacm_enabled' => true,
-          'gacm_provider_ids' => '89,91,128',
-          'non_personalized_ads_fallback' => true,
-        ), false );
-        wp_cache_delete( 'faz_gcm_settings', 'options' );
-        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
-          \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
-        }
-      `);
-    };
-
-    const restoreGcm = () => {
-      wpEval(`
-        $restored = json_decode( base64_decode( '${gcmSettingsB64}' ), true );
-        update_option( 'faz_gcm_settings', is_array( $restored ) ? $restored : array(), false );
-        wp_cache_delete( 'faz_gcm_settings', 'options' );
-        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
-          \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
-        }
-      `);
-    };
+    const gcmSettingsSnapshot = snapshotGcmSettings();
 
     const scenarios: GcmScenario[] = [
       {
@@ -362,7 +424,7 @@ test.describe('GCM and IAB TCF behavior', () => {
       expect(stale.bannerVisible).toBe(true);
       await staleContext.close();
     } finally {
-      restoreGcm();
+      restoreGcmSettings(gcmSettingsSnapshot);
     }
   });
 
@@ -425,6 +487,12 @@ test.describe('GCM and IAB TCF behavior', () => {
         $s['iab']['purpose_one_treatment'] = false;
         update_option( 'faz_settings', $s );
         delete_option( 'faz_banner_template' );
+        wp_cache_delete( 'faz_settings', 'options' );
+        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
+          \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
+        }
+        do_action( 'rest_api_init' );
+        do_action( 'faz_after_update_settings', $s );
       `);
 
       await freshContext.clearCookies();
@@ -515,16 +583,20 @@ test.describe('GCM and IAB TCF behavior', () => {
       await freshContext.close();
       wpEval(`
         $restored = json_decode( base64_decode( '${settingsB64}' ), true );
-        update_option( 'faz_settings', is_array( $restored ) ? $restored : array() );
-        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
-          \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
-        }
+        $restored = is_array( $restored ) ? $restored : array();
+        update_option( 'faz_settings', $restored );
         $banner_snapshot = json_decode( base64_decode( '${bannerTemplateB64}' ), true );
         if ( is_array( $banner_snapshot ) && ! empty( $banner_snapshot['exists'] ) ) {
           update_option( 'faz_banner_template', $banner_snapshot['value'] );
         } else {
           delete_option( 'faz_banner_template' );
         }
+        wp_cache_delete( 'faz_settings', 'options' );
+        if ( class_exists( '\\FazCookie\\Includes\\Cache' ) ) {
+          \\FazCookie\\Includes\\Cache::invalidate_cache_group( 'settings' );
+        }
+        do_action( 'rest_api_init' );
+        do_action( 'faz_after_update_settings', $restored );
       `);
     }
   });
