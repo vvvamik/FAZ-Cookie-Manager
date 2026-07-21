@@ -1633,8 +1633,8 @@ class Admin {
 		echo ' <code>faz_whitelisted_scripts</code> ' . esc_html__( 'and', 'faz-cookie-manager' );
 		echo ' <code>faz_payment_gateway_whitelist</code> ' . esc_html__( 'filters.', 'faz-cookie-manager' );
 		echo '</p>';
-		echo '<a href="' . esc_url( $dismiss_url ) . '" style="position:absolute;top:0;right:0;padding:9px;text-decoration:none;color:#787c82">';
-		echo '<span class="dashicons dashicons-dismiss"></span></a>';
+		echo '<a href="' . esc_url( $dismiss_url ) . '" aria-label="' . esc_attr__( 'Dismiss this notice', 'faz-cookie-manager' ) . '" style="position:absolute;top:0;right:0;padding:9px;text-decoration:none;color:#787c82">';
+		echo '<span class="dashicons dashicons-dismiss" aria-hidden="true"></span></a>';
 		echo '</div>';
 	}
 
@@ -1723,8 +1723,8 @@ class Admin {
 		);
 		echo ' <a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Open settings', 'faz-cookie-manager' ) . '</a>.';
 		echo '</p>';
-		echo '<a href="' . esc_url( $dismiss_url ) . '" style="position:absolute;top:0;right:0;padding:9px;text-decoration:none;color:#787c82">';
-		echo '<span class="dashicons dashicons-dismiss"></span></a>';
+		echo '<a href="' . esc_url( $dismiss_url ) . '" aria-label="' . esc_attr__( 'Dismiss this notice', 'faz-cookie-manager' ) . '" style="position:absolute;top:0;right:0;padding:9px;text-decoration:none;color:#787c82">';
+		echo '<span class="dashicons dashicons-dismiss" aria-hidden="true"></span></a>';
 		echo '</div>';
 	}
 

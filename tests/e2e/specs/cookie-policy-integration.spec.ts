@@ -8,7 +8,7 @@
  *     the admin UI — same width, same chrome as Settings/Banner).
  *  3. Admin form Save round-trip persists via REST.
  *  4. Preview button produces a non-empty rendered policy with the
- *     hardcoded disclaimer.
+ *     configured/localized disclaimer.
  *  5. Shortcode renders the saved policy on a public page (GDPR-strict /
  *     CCPA / LGPD switching).
  *  6. Eight languages × jurisdictions matrix renders without {{...}}

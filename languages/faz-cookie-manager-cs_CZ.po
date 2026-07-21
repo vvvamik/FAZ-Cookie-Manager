@@ -5695,3 +5695,7 @@ msgstr "Tlačítko"
 #: includes/blocks/editor.js:105
 msgid "Link"
 msgstr "Odkaz"
+
+#: admin/class-admin.php:1636 admin/class-admin.php:1726
+msgid "Dismiss this notice"
+msgstr "Zavřít toto upozornění"

@@ -5502,3 +5502,7 @@ msgstr "Bouton"
 #: includes/blocks/editor.js:105
 msgid "Link"
 msgstr "Lien"
+
+#: admin/class-admin.php:1636 admin/class-admin.php:1726
+msgid "Dismiss this notice"
+msgstr "Ignorer cette notification"

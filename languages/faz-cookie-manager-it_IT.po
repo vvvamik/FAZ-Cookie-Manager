@@ -1,3 +1,4 @@
+#
 msgid ""
 msgstr ""
 "Project-Id-Version: FAZ Cookie Manager 1.5.2\n"
@@ -658,7 +659,8 @@ msgstr "Nessun fornitore trovato."
 msgid "Failed to load vendor details."
 msgstr "Caricamento dei dettagli del fornitore non riuscito."
 
-#. translators: %1$d: current page, %2$d: total pages, %3$d: total vendor count
+#. translators: %1$d: current page, %2$d: total pages, %3$d: total vendor
+#. count
 #: admin/class-admin.php:672
 #, php-format
 msgid "Page %1$d of %2$d (%3$d vendors)"
@@ -735,7 +737,8 @@ msgstr "Preselezionati %d fornitori dalla scansione cookie. Fai clic su Salva se
 msgid "All %d auto-detected vendor(s) were already in your selection."
 msgstr "Tutti i %d fornitore/i rilevati automaticamente erano già nella tua selezione."
 
-#. translators: %1$d: number of newly pre-ticked vendors, %2$d: number already selected
+#. translators: %1$d: number of newly pre-ticked vendors, %2$d: number already
+#. selected
 #: admin/class-admin.php:701
 #, php-format
 msgid "Pre-ticked %1$d new vendor(s), %2$d were already selected. Click Save Selection to apply."
@@ -948,7 +951,8 @@ msgstr "Attesto di disporre di un accordo DPF / SCC / DPA con ipinfo.io per il t
 msgid "I attest to having a Standard Contract (PIPL Art. 38) or CAC security assessment (Art. 40) for cross-border data transfers OF data subject to PIPL, OR to not process any data that requires such mechanisms."
 msgstr "Attesto di disporre di un Contratto Standard (PIPL Art. 38) o di una valutazione di sicurezza CAC (Art. 40) per i trasferimenti transfrontalieri di dati soggetti a PIPL, OPPURE di non trattare dati che richiedano tali meccanismi."
 
-#. translators: %1$s: localised timestamp, %2$s: WP user id of the attesting admin
+#. translators: %1$s: localised timestamp, %2$s: WP user id of the attesting
+#. admin
 #: admin/class-admin.php:774
 #, php-format
 msgid "Attested at %1$s by user ID %2$s"
@@ -1006,7 +1010,8 @@ msgstr "Tutti i %d servizi rilevati sono già selezionati."
 msgid "Detected services left unticked, as you set them."
 msgstr "Servizi rilevati lasciati non selezionati, come da tua impostazione."
 
-#. translators: %1$d: number of newly pre-ticked services, %2$d: number of services already selected
+#. translators: %1$d: number of newly pre-ticked services, %2$d: number of
+#. services already selected
 #: admin/class-admin.php:798
 #, php-format
 msgid "Pre-ticked %1$d new service(s), %2$d were already selected. Click Save to commit."
@@ -2982,7 +2987,8 @@ msgstr "Consenti la chiusura (X) accanto al pulsante Rifiuta"
 msgid "Non-EU only"
 msgstr "Solo non-UE"
 
-#. translators: %1$s: EDPB Guidelines link, %2$s: Italian Garante Provvedimento link.
+#. translators: %1$s: EDPB Guidelines link, %2$s: Italian Garante
+#. Provvedimento link.
 #: admin/views/banner.php:617
 #, php-format
 msgid "<strong>Off by default — keep OFF for EU/EEA/UK visitors.</strong> The %1$s and the %2$s identify \"X close + labelled Reject on the same banner\" as a recognised dark pattern (unequal-weight dismissal paths). Safe to enable on banners targeted at US, Brazil, Canada or Australian traffic where this rule does not apply — typically used together with multi-banner geo-routing (Geo Targeting tab) to keep the X on a CCPA-style banner."
@@ -3105,7 +3111,9 @@ msgstr "Rispetta il Global Privacy Control (GPC)"
 msgid "Geo source not configured"
 msgstr "Sorgente geo non configurata"
 
-#. translators: %1$s: Settings -> Geolocation link, %2$s: the faz_trust_cf_ipcountry_header filter name, %3$s: the add_filter() code snippet.
+#. translators: %1$s: Settings -> Geolocation link, %2$s: the
+#. faz_trust_cf_ipcountry_header filter name, %3$s: the add_filter() code
+#. snippet.
 #: admin/views/banner.php:830
 #, fuzzy, php-format
 msgid "No country signal is available on this install. Multi-banner geo-routing will resolve every visitor to \"unknown\" and fall back to your match-all / default banner. The usual fix is to configure %1$s with a free MaxMind GeoLite2 license key. If your site sits behind Cloudflare instead, the %2$s filter is available — note this is a developer code filter, NOT a setting in this screen: a developer adds %3$s in your theme or a code-snippets plugin. Without one of these, the targets you set below have no effect."
@@ -4801,12 +4809,14 @@ msgstr "Plugin attivi"
 msgid "Manage cookie preferences"
 msgstr "Gestisci le preferenze sui cookie"
 
-#. translators: {name} is replaced with the cookie category name (appears twice, do not translate {name})
+#. translators: {name} is replaced with the cookie category name (appears
+#. twice, do not translate {name})
 #: frontend/class-frontend.php:660
 msgid "{name} enabled, disable {name}"
 msgstr "{name} abilitato, disabilita {name}"
 
-#. translators: {name} is replaced with the cookie category name (appears twice, do not translate {name})
+#. translators: {name} is replaced with the cookie category name (appears
+#. twice, do not translate {name})
 #: frontend/class-frontend.php:662
 msgid "{name} disabled, enable {name}"
 msgstr "{name} disabilitato, abilita {name}"
@@ -5249,7 +5259,8 @@ msgstr "Non è stato possibile registrare la tua richiesta a causa di un errore 
 msgid "Your request has been received. We will respond within 30 days as required by law."
 msgstr "La tua richiesta è stata ricevuta. Risponderemo entro 30 giorni come richiesto dalla legge."
 
-#. translators: 1: site name, 2: name, 3: email, 4: request type, 5: date, 6: message
+#. translators: 1: site name, 2: name, 3: email, 4: request type, 5: date, 6:
+#. message
 #: includes/class-dsar-shortcode.php:424
 #, php-format
 msgid ""
@@ -5295,7 +5306,8 @@ msgstr "[%1$s] Richiesta dell’interessato: %2$s"
 msgid "[%s] We received your data request"
 msgstr "[%s] Abbiamo ricevuto la tua richiesta di dati"
 
-#. translators: 1: first name, 2: site name, 3: human-readable request type (e.g. "Right of Access (Art. 15 GDPR)")
+#. translators: 1: first name, 2: site name, 3: human-readable request type
+#. (e.g. "Right of Access (Art. 15 GDPR)")
 #: includes/class-dsar-shortcode.php:467
 #, php-format
 msgid ""
@@ -5423,7 +5435,8 @@ msgid_plural "Deleted %d FAZ Cookie Manager privacy requests."
 msgstr[0] "Eliminazione dei dati del plugin FAZ Cookie Manager non riuscita!"
 msgstr[1] "Eliminazione dei dati del plugin FAZ Cookie Manager non riuscita!"
 
-#. translators: %d: number of meta entries that had script fields stripped during import.
+#. translators: %d: number of meta entries that had script fields stripped
+#. during import.
 #: includes/class-wp-cli-commands.php:333
 #, php-format
 msgid "Script meta field(s) (opt_in_script/opt_out_script) were stripped from %d imported entry because the current user lacks the unfiltered_html capability. Re-run as a super-admin to preserve script fields."
@@ -5490,3 +5503,7 @@ msgstr "Pulsante"
 #: includes/blocks/editor.js:105
 msgid "Link"
 msgstr "Collegamento"
+
+#: admin/class-admin.php:1636 admin/class-admin.php:1726
+msgid "Dismiss this notice"
+msgstr "Ignora questo avviso"

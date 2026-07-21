@@ -5503,3 +5503,7 @@ msgstr "Knop"
 #: includes/blocks/editor.js:105
 msgid "Link"
 msgstr "Link"
+
+#: admin/class-admin.php:1636 admin/class-admin.php:1726
+msgid "Dismiss this notice"
+msgstr "Deze melding sluiten"
